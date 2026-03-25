@@ -13,6 +13,8 @@
 
 mod types;
 mod header;
+mod index;
 
 pub use types::*;
 pub use header::*;
+pub use index::*;
