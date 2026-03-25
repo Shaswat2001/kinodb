@@ -14,7 +14,9 @@
 mod types;
 mod header;
 mod index;
+mod writer;
 
 pub use types::*;
 pub use header::*;
 pub use index::*;
+pub use writer::*;
