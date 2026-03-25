@@ -11,3 +11,17 @@
     -> PartialEq - Allows for comparison using == and !=
     -> Eq - Indicates full equality semantics
     -> Hash - Allows struct to be used as key in hash based collections. 
+
+2. let file_size = std::fs::metadata(path)?.len();
+    std::fs::metadata(path) returns Result<Metadata> which is Ok(Metadata) if the file exists and Err(error) if there is an error.
+    ? after that checks if there is an error, throw that if not go to the next bit and calculate the length using .len()
+
+    Its equivalent to - 
+        let metadata = match std::fs::metadata(path) {
+            Ok(m) => m,
+            Err(e) => Return Err(e),
+        }
+
+3. for i in 0..reader.num_episodes() 
+    Looping within the desired range, meaning looping from 0 but not including reader.num_episodes()
+    so if reader.num_episodes() is equal to 5, the loop will run from 0, 1, 2, 3, 4
