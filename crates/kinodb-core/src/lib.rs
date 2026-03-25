@@ -12,5 +12,7 @@
 //! 🚧 Early development — API will change.
 
 mod types;
+mod header;
 
 pub use types::*;
+pub use header::*;
