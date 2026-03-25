@@ -1,0 +1,13 @@
+1. #[derive()]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct EpisodeId(pub u64);
+
+    It automatically generates implementations of common traits for the structure so that we dont have to write them 
+    automatically. 
+
+    -> Debug - Allows struct to be printed for debugging
+    -> Clone - Allows to explicitly duplicate the value using .clone()
+    -> Copy - Allows type to be copied implicitly instead of moved.
+    -> PartialEq - Allows for comparison using == and !=
+    -> Eq - Indicates full equality semantics
+    -> Hash - Allows struct to be used as key in hash based collections. 
