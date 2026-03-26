@@ -2,12 +2,19 @@ use kinodb_core::KdbReader;
 use std::fs;
 use std::path::Path;
 
-pub fn run(kdb_path: &str, output_dir: &str, format: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(
+    kdb_path: &str,
+    output_dir: &str,
+    format: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         "numpy" => run_numpy(kdb_path, output_dir),
         "json" => run_json(kdb_path, output_dir),
         other => {
-            eprintln!("Unsupported export format: '{}'. Supported: numpy, json", other);
+            eprintln!(
+                "Unsupported export format: '{}'. Supported: numpy, json",
+                other
+            );
             std::process::exit(1);
         }
     }
@@ -41,7 +48,10 @@ fn run_numpy(kdb_path: &str, output_dir: &str) -> Result<(), Box<dyn std::error:
     let reader = KdbReader::open(kdb_path)?;
     let header = reader.header();
 
-    println!("Exporting {} episodes from {}", header.num_episodes, kdb_path);
+    println!(
+        "Exporting {} episodes from {}",
+        header.num_episodes, kdb_path
+    );
     println!("  Format: numpy (binary f32/u8 + JSON metadata)");
     println!("  Output: {}/", output_dir);
     println!();
@@ -67,7 +77,11 @@ fn run_numpy(kdb_path: &str, output_dir: &str) -> Result<(), Box<dyn std::error:
         let frames = &episode.frames;
         let num_frames = frames.len();
         let action_dim = meta.action_dim as usize;
-        let state_dim = if num_frames > 0 { frames[0].state.len() } else { 0 };
+        let state_dim = if num_frames > 0 {
+            frames[0].state.len()
+        } else {
+            0
+        };
 
         // ── meta.json ───────────────────────────────────────
         let cameras_json: Vec<String> = if num_frames > 0 && !frames[0].images.is_empty() {
@@ -312,6 +326,12 @@ fn run_json(kdb_path: &str, output_dir: &str) -> Result<(), Box<dyn std::error::
 /// Make a string safe for use as a filename.
 fn sanitize_filename(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
