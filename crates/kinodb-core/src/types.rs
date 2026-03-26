@@ -20,7 +20,7 @@ pub struct EpisodeMeta {
     /// Unique id within this database.
     pub id: EpisodeId,
 
-    /// Which robot collected this episode (e.g. "widowx", "franka", "aloha")
+    /// Which robot collected this episode (e.g. "widowx", "franka", "aloha").
     pub embodiment: String,
 
     /// Task description in natural language (e.g. "pick up the red block").
@@ -44,11 +44,11 @@ pub struct EpisodeMeta {
 
 /// One timestep of robot data.
 ///
-/// A frame is the atomic unit - one "row" of the trajectory.
-/// At each timestep the robot observes, acts, and gets a reward. 
+/// A frame is the atomic unit — one "row" of the trajectory.
+/// At each timestep the robot observes, acts, and gets a reward.
 #[derive(Debug, Clone)]
 pub struct Frame {
-    /// Index within the episode (0-based)
+    /// Index within the episode (0-based).
     pub timestep: u32,
 
     /// Camera observations as raw image bytes.
@@ -57,7 +57,7 @@ pub struct Frame {
     /// a video segment in the .kdb file.
     pub images: Vec<ImageObs>,
 
-    /// Robot state / proprioception (e.g. joint positions, gripper state),
+    /// Robot state / proprioception (e.g. joint positions, gripper state).
     /// Empty if not available for this dataset.
     pub state: Vec<f32>,
 
@@ -86,24 +86,24 @@ pub struct ImageObs {
     /// Number of channels (typically 3 for RGB).
     pub channels: u8,
 
-    /// Raw pixel data (RGB, row-major, u8)
-    /// Length = width * height * channels
+    /// Raw pixel data (RGB, row-major, u8).
+    /// Length = width * height * channels.
     pub data: Vec<u8>,
 }
 
-/// A complete episode: metadata + all its frames
+/// A complete episode: metadata + all its frames.
 ///
 /// This is what you get when you fully load one episode from the database.
 /// For large-scale training you'd stream frames instead of loading the
-/// whole episode into memory - but this type is useful for inspection,
-/// testin, and small datasets.
+/// whole episode into memory — but this type is useful for inspection,
+/// testing, and small datasets.
 #[derive(Debug, Clone)]
 pub struct Episode {
     pub meta: EpisodeMeta,
-    pub frames: Vec<Frame>
+    pub frames: Vec<Frame>,
 }
 
-// Construction helpers
+// ── Construction helpers ────────────────────────────────────────
 
 impl EpisodeMeta {
     /// Create a minimal episode metadata with required fields only.

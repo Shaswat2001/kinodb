@@ -8,3 +8,4 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 kinodb-core = { path = "../kinodb-core" }
 hdf5 = "0.8"
+ndarray = "0.15"

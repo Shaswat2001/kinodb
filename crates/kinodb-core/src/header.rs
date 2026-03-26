@@ -1,8 +1,10 @@
 //! The `.kdb` file header.
 //!
-//! Every kdb file starts with a 64-byte header. This is enough to
+//! Every `.kdb` file starts with a 64-byte header. This is enough to
 //! identify the file, check compatibility, and know how much data is
 //! inside without reading anything else.
+//!
+//! ## Binary layout (64 bytes, little-endian)
 //!
 //! | Offset | Size | Field              | Description                          |
 //! |--------|------|--------------------|--------------------------------------|
@@ -19,7 +21,7 @@
 /// Magic bytes at the start of every `.kdb` file.
 pub const MAGIC: [u8; 4] = *b"KINO";
 
-/// Current format version
+/// Current format version.
 pub const VERSION_MAJOR: u16 = 0;
 pub const VERSION_MINOR: u16 = 1;
 
@@ -49,7 +51,7 @@ pub struct FileHeader {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HeaderError {
     /// Input is shorter than 64 bytes.
-    TooShort { got: usize},
+    TooShort { got: usize },
     /// First 4 bytes are not `b"KINO"`.
     BadMagic { got: [u8; 4] },
     /// Version is newer than what we support.
@@ -92,7 +94,7 @@ impl FileHeader {
         }
     }
 
-    /// Serialize this header to exactly 64 bytes (little-endian)
+    /// Serialize this header to exactly 64 bytes (little-endian).
     pub fn to_bytes(&self) -> [u8; HEADER_SIZE] {
         let mut buf = [0u8; HEADER_SIZE];
 
