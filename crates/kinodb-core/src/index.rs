@@ -165,7 +165,7 @@ impl EpisodeIndex {
     ///
     /// `data` must be an exact multiple of `INDEX_ENTRY_SIZE` (64 bytes).
     pub fn from_bytes(data: &[u8]) -> Result<Self, IndexError> {
-        if data.len() % INDEX_ENTRY_SIZE != 0 {
+        if !data.len().is_multiple_of(INDEX_ENTRY_SIZE) {
             return Err(IndexError::BadAlignment {
                 total_len: data.len(),
                 entry_size: INDEX_ENTRY_SIZE,

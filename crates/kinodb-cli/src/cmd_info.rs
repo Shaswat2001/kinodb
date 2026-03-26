@@ -73,8 +73,8 @@ pub fn run(path: &str, show_episodes: bool) -> Result<(), Box<dyn std::error::Er
     if show_episodes {
         println!();
         println!(
-            "  {:<6} {:<10} {:<8} {:<10} {:<10} {}",
-            "ID", "EMBODIMENT", "FRAMES", "ACT_DIM", "STATE_DIM", "TASK"
+            "  {:<6} {:<10} {:<8} {:<10} {:<10} TASK",
+            "ID", "EMBODIMENT", "FRAMES", "ACT_DIM", "STATE_DIM"
         );
         println!("  {}", "-".repeat(70));
 
@@ -178,5 +178,5 @@ fn format_timestamp(secs: u64) -> String {
 }
 
 fn is_leap(year: u64) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }

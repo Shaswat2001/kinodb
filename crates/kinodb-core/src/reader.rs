@@ -22,7 +22,6 @@ use std::path::Path;
 
 use crate::{
     Episode, EpisodeId, EpisodeIndex, EpisodeMeta, FileHeader, Frame, ImageObs, IndexEntry,
-    HEADER_SIZE,
 };
 
 /// A reader for `.kdb` files.

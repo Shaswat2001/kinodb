@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand};
 use std::process;
 
-mod cmd_create_test;
 mod cmd_info;
+mod cmd_create_test;
 mod cmd_ingest;
+mod cmd_export;
 
 /// kinodb — a high-performance trajectory database for robot learning.
 #[derive(Parser)]
@@ -73,6 +74,20 @@ enum Commands {
         #[arg(long)]
         max_episodes: Option<usize>,
     },
+
+    /// Export a .kdb file to standard formats (numpy binary + JSON).
+    Export {
+        /// Path to the .kdb file.
+        kdb_path: String,
+
+        /// Output directory.
+        #[arg(short, long, default_value = "export")]
+        output: String,
+
+        /// Export format: numpy, json.
+        #[arg(short = 'F', long, default_value = "numpy")]
+        format: String,
+    },
 }
 
 fn main() {
@@ -103,6 +118,11 @@ fn main() {
             fps,
             max_episodes,
         ),
+        Commands::Export {
+            kdb_path,
+            output,
+            format,
+        } => cmd_export::run(&kdb_path, &output, &format),
     };
 
     if let Err(e) = result {

@@ -22,13 +22,13 @@
         - name: Install Rust
           uses: dtolnay/rust-toolchain@stable
 
-        - name: Install CMake (Ubuntu)
+        - name: Install CMake + HDF5 (Ubuntu)
           if: runner.os == 'Linux'
-          run: sudo apt-get update && sudo apt-get install -y cmake
+          run: sudo apt-get update && sudo apt-get install -y cmake && sudo apt-get install libhdf5-dev
 
-        - name: Install CMake (macOS)
+        - name: Install CMake + HDF5 (macOS)
           if: runner.os == 'macOS'
-          run: brew install cmake
+          run: brew install cmake hdf5@1.10
 
         - name: Cache cargo
           uses: actions/cache@v4
@@ -54,7 +54,7 @@
           with:
             components: clippy
         - name: Install CMake
-          run: sudo apt-get update && sudo apt-get install -y cmake
+          run: sudo apt-get update && sudo apt-get install -y cmake && sudo apt-get install libhdf5-dev
         - name: Clippy
           run: cargo clippy --workspace -- -D warnings
 
