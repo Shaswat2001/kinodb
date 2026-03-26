@@ -1,6 +1,11 @@
 use kinodb_core::{Episode, EpisodeId, EpisodeMeta, Frame, ImageObs, KdbWriter};
 
-pub fn run(path: &str, num_episodes: u32, frames_per_episode: u32, with_images: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(
+    path: &str,
+    num_episodes: u32,
+    frames_per_episode: u32,
+    with_images: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating test database: {}", path);
     println!(
         "  {} episodes x {} frames{}",
@@ -55,21 +60,21 @@ pub fn run(path: &str, num_episodes: u32, frames_per_episode: u32, with_images: 
                     images,
                     // 6-DoF state: simulate a smooth trajectory
                     state: vec![
-                        progress * 0.3,         // x
-                        progress * 0.1,         // y
-                        0.5 + progress * 0.2,   // z
-                        0.0,                    // roll
-                        0.0,                    // pitch
-                        progress * 0.1,         // yaw
+                        progress * 0.3,       // x
+                        progress * 0.1,       // y
+                        0.5 + progress * 0.2, // z
+                        0.0,                  // roll
+                        0.0,                  // pitch
+                        progress * 0.1,       // yaw
                     ],
                     // 7-DoF action: small deltas
                     action: vec![
-                        0.01,   // dx
-                        0.005,  // dy
-                        0.01,   // dz
-                        0.0,    // droll
-                        0.0,    // dpitch
-                        0.005,  // dyaw
+                        0.01,                                               // dx
+                        0.005,                                              // dy
+                        0.01,                                               // dz
+                        0.0,                                                // droll
+                        0.0,                                                // dpitch
+                        0.005,                                              // dyaw
                         if t < frames_per_episode - 2 { 0.0 } else { 1.0 }, // gripper
                     ],
                     reward: Some(if t == frames_per_episode - 1 && success {

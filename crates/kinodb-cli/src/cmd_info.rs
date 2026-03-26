@@ -19,7 +19,10 @@ pub fn run(path: &str, show_episodes: bool) -> Result<(), Box<dyn std::error::Er
     // Compute file size
     let file_size = std::fs::metadata(path)?.len();
     println!("  File size: {}", format_bytes(file_size));
-    println!("  Created:   {}", format_timestamp(header.created_timestamp));
+    println!(
+        "  Created:   {}",
+        format_timestamp(header.created_timestamp)
+    );
 
     // ── Collect stats from episode metadata ──────────────────
     if reader.num_episodes() > 0 {

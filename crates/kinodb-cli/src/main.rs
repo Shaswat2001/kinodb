@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::process;
 
-mod cmd_info;
 mod cmd_create_test;
+mod cmd_info;
 mod cmd_ingest;
 
 /// kinodb — a high-performance trajectory database for robot learning.

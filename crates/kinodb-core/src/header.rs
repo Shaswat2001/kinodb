@@ -62,7 +62,11 @@ impl std::fmt::Display for HeaderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HeaderError::TooShort { got } => {
-                write!(f, "header too short: expected {} bytes, got {}", HEADER_SIZE, got)
+                write!(
+                    f,
+                    "header too short: expected {} bytes, got {}",
+                    HEADER_SIZE, got
+                )
             }
             HeaderError::BadMagic { got } => {
                 write!(f, "bad magic: expected {:?}, got {:?}", MAGIC, got)

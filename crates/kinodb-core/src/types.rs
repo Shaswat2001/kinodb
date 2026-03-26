@@ -225,14 +225,7 @@ mod tests {
 
     #[test]
     fn build_complete_episode() {
-        let meta = EpisodeMeta::new(
-            EpisodeId(0),
-            "franka",
-            "open the drawer",
-            2,
-            7,
-            5.0,
-        );
+        let meta = EpisodeMeta::new(EpisodeId(0), "franka", "open the drawer", 2, 7, 5.0);
 
         let frames = vec![
             Frame {
@@ -253,10 +246,7 @@ mod tests {
             },
         ];
 
-        let episode = Episode {
-            meta,
-            frames,
-        };
+        let episode = Episode { meta, frames };
 
         assert_eq!(episode.meta.num_frames, 2);
         assert_eq!(episode.frames.len(), 2);

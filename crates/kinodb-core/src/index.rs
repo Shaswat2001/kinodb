@@ -209,9 +209,16 @@ impl std::fmt::Display for IndexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             IndexError::EntryTooShort { got } => {
-                write!(f, "index entry too short: expected {} bytes, got {}", INDEX_ENTRY_SIZE, got)
+                write!(
+                    f,
+                    "index entry too short: expected {} bytes, got {}",
+                    INDEX_ENTRY_SIZE, got
+                )
             }
-            IndexError::BadAlignment { total_len, entry_size } => {
+            IndexError::BadAlignment {
+                total_len,
+                entry_size,
+            } => {
                 write!(
                     f,
                     "index data length {} is not a multiple of entry size {}",

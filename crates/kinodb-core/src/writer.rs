@@ -29,9 +29,7 @@ use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::{
-    Episode, EpisodeId, EpisodeIndex, FileHeader, IndexEntry, HEADER_SIZE,
-};
+use crate::{Episode, EpisodeId, EpisodeIndex, FileHeader, IndexEntry, HEADER_SIZE};
 
 /// Writes episodes into a `.kdb` file.
 ///
@@ -307,7 +305,7 @@ impl KdbWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{EpisodeId, EpisodeMeta, Episode, Frame, ImageObs};
+    use crate::{Episode, EpisodeId, EpisodeMeta, Frame, ImageObs};
     use std::fs;
 
     /// Helper: create a small test episode.

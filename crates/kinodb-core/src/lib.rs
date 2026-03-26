@@ -11,14 +11,14 @@
 //! ## Status
 //! 🚧 Early development — API will change.
 
-mod types;
 mod header;
 mod index;
-mod writer;
 mod reader;
+mod types;
+mod writer;
 
-pub use types::*;
 pub use header::*;
 pub use index::*;
-pub use writer::*;
 pub use reader::*;
+pub use types::*;
+pub use writer::*;

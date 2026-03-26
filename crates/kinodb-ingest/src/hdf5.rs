@@ -26,9 +26,7 @@
 
 use std::path::Path;
 
-use kinodb_core::{
-    Episode, EpisodeId, EpisodeMeta, Frame, ImageObs, KdbWriter,
-};
+use kinodb_core::{Episode, EpisodeId, EpisodeMeta, Frame, ImageObs, KdbWriter};
 
 /// Configuration for HDF5 ingestion.
 #[derive(Debug, Clone)]
@@ -67,12 +65,6 @@ pub enum Hdf5Error {
     Io(std::io::Error),
     /// The HDF5 file doesn't have the expected structure.
     MissingGroup(String),
-    /// A dataset has an unexpected shape.
-    UnexpectedShape {
-        dataset: String,
-        expected: String,
-        got: String,
-    },
 }
 
 impl std::fmt::Display for Hdf5Error {
@@ -82,15 +74,6 @@ impl std::fmt::Display for Hdf5Error {
             Hdf5Error::Write(e) => write!(f, "write error: {}", e),
             Hdf5Error::Io(e) => write!(f, "I/O error: {}", e),
             Hdf5Error::MissingGroup(g) => write!(f, "missing group: {}", g),
-            Hdf5Error::UnexpectedShape {
-                dataset,
-                expected,
-                got,
-            } => write!(
-                f,
-                "dataset '{}': expected shape {}, got {}",
-                dataset, expected, got
-            ),
         }
     }
 }
@@ -123,8 +106,6 @@ pub struct IngestResult {
 }
 
 /// Ingest a robomimic/LIBERO-style HDF5 file into a `.kdb` file.
-///
-/// Returns the number of episodes and frames written.
 pub fn ingest_hdf5(
     hdf5_path: impl AsRef<Path>,
     output_path: impl AsRef<Path>,
@@ -135,12 +116,11 @@ pub fn ingest_hdf5(
 
     let file = hdf5::File::open(hdf5_path)?;
 
-    // Find the data group
-    let data_group = file.group("data").map_err(|_| {
-        Hdf5Error::MissingGroup("data".to_string())
-    })?;
+    let data_group = file
+        .group("data")
+        .map_err(|_| Hdf5Error::MissingGroup("data".to_string()))?;
 
-    // Discover demo groups: sorted by name so order is deterministic
+    // Discover demo groups: sorted numerically
     let mut demo_names: Vec<String> = Vec::new();
     for name in data_group.member_names()? {
         if name.starts_with("demo_") {
@@ -148,7 +128,6 @@ pub fn ingest_hdf5(
         }
     }
     demo_names.sort_by(|a, b| {
-        // Sort numerically: demo_0, demo_1, ..., demo_10, demo_11
         let num_a = a.strip_prefix("demo_").and_then(|s| s.parse::<u64>().ok());
         let num_b = b.strip_prefix("demo_").and_then(|s| s.parse::<u64>().ok());
         num_a.cmp(&num_b)
@@ -160,14 +139,11 @@ pub fn ingest_hdf5(
         ));
     }
 
-    // Apply max_episodes limit
     if let Some(max) = config.max_episodes {
         demo_names.truncate(max);
     }
 
-    // Determine task string
     let task = config.task.clone().unwrap_or_else(|| {
-        // Try to get from HDF5 attributes, fall back to filename
         hdf5_path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -175,7 +151,6 @@ pub fn ingest_hdf5(
             .to_string()
     });
 
-    // Create writer
     let mut writer = KdbWriter::create(output_path)?;
     let mut total_frames: u64 = 0;
 
@@ -214,10 +189,10 @@ fn read_demo_group(
     fps: f32,
 ) -> Result<Episode, Hdf5Error> {
     // ── Read actions (required) ─────────────────────────────
-    let actions_ds = group.dataset("actions").map_err(|_| {
-        Hdf5Error::MissingGroup(format!("data/{}/actions", demo_name))
-    })?;
-    let actions: ndarray::Array2<f32> = actions_ds.read_2d()?;
+    let actions_ds = group
+        .dataset("actions")
+        .map_err(|_| Hdf5Error::MissingGroup(format!("data/{}/actions", demo_name)))?;
+    let actions = actions_ds.read_2d::<f32>()?;
     let num_frames = actions.nrows();
     let action_dim = actions.ncols();
 
@@ -238,24 +213,18 @@ fn read_demo_group(
     // ── Discover observations ───────────────────────────────
     let obs_group = group.group("obs").ok();
 
-    // Classify obs keys into cameras (4D uint8) and state (2D float)
     let mut camera_keys: Vec<String> = Vec::new();
     let mut state_keys: Vec<String> = Vec::new();
 
     if let Some(ref obs) = obs_group {
         for name in obs.member_names().unwrap_or_default() {
             if let Ok(ds) = obs.dataset(&name) {
-                let shape = ds.shape();
-                let ndim = shape.len();
-
+                let ndim = ds.ndim();
                 if ndim == 4 {
-                    // Likely an image: (N, H, W, C)
                     camera_keys.push(name);
                 } else if ndim == 2 {
-                    // Likely state: (N, D)
                     state_keys.push(name);
                 }
-                // Skip 1D or other shapes
             }
         }
     }
@@ -263,11 +232,10 @@ fn read_demo_group(
     state_keys.sort();
 
     // ── Read state vectors ──────────────────────────────────
-    // Concatenate all state keys into one vector per frame
     let mut state_arrays: Vec<ndarray::Array2<f32>> = Vec::new();
     if let Some(ref obs) = obs_group {
         for key in &state_keys {
-            if let Ok(ds) = obs.dataset(key) {
+            if let Ok(ds) = obs.dataset(key.as_str()) {
                 if let Ok(arr) = ds.read_2d::<f32>() {
                     state_arrays.push(arr);
                 }
@@ -275,17 +243,24 @@ fn read_demo_group(
         }
     }
 
-    let state_dim: usize = state_arrays.iter().map(|a| a.ncols()).sum();
-
     // ── Read image data ─────────────────────────────────────
-    // We read all camera data upfront: Vec<(camera_name, Array4<u8>)>
-    let mut camera_data: Vec<(String, ndarray::Array4<u8>)> = Vec::new();
+    // Read as dynamic-dim array, then extract flat bytes
+    let mut camera_data: Vec<(String, Vec<u8>, usize, usize, usize, usize)> = Vec::new();
     if let Some(ref obs) = obs_group {
         for key in &camera_keys {
-            if let Ok(ds) = obs.dataset(key) {
-                // Read as 4D: (N, H, W, C)
-                if let Ok(arr) = ds.read::<u8, ndarray::Ix4>() {
-                    camera_data.push((key.clone(), arr));
+            if let Ok(ds) = obs.dataset(key.as_str()) {
+                let shape = ds.shape();
+                if shape.len() == 4 {
+                    let n = shape[0];
+                    let h = shape[1];
+                    let w = shape[2];
+                    let c = shape[3];
+                    // read_dyn returns ArrayD<u8> — works for any dimensionality
+                    if let Ok(arr) = ds.read_dyn::<u8>() {
+                        // .iter() gives us row-major order, which is what we want
+                        let flat: Vec<u8> = arr.iter().copied().collect();
+                        camera_data.push((key.clone(), flat, n, h, w, c));
+                    }
                 }
             }
         }
@@ -296,7 +271,7 @@ fn read_demo_group(
 
     for t in 0..num_frames {
         // State: concat all state arrays for this timestep
-        let mut state = Vec::with_capacity(state_dim);
+        let mut state: Vec<f32> = Vec::new();
         for arr in &state_arrays {
             let row = arr.row(t);
             state.extend(row.iter());
@@ -307,22 +282,20 @@ fn read_demo_group(
 
         // Images
         let mut images = Vec::with_capacity(camera_data.len());
-        for (cam_name, arr) in &camera_data {
-            let frame_img = arr.index_axis(ndarray::Axis(0), t);
-            let height = frame_img.shape()[0] as u32;
-            let width = frame_img.shape()[1] as u32;
-            let channels = frame_img.shape()[2] as u8;
-
-            // ndarray stores in row-major, which is what we want (H, W, C)
-            let data: Vec<u8> = frame_img.iter().copied().collect();
-
-            images.push(ImageObs {
-                camera: cam_name.clone(),
-                width,
-                height,
-                channels,
-                data,
-            });
+        for (cam_name, flat_data, _n, h, w, c) in &camera_data {
+            let frame_size = h * w * c;
+            let offset = t * frame_size;
+            let end = offset + frame_size;
+            if end <= flat_data.len() {
+                let data = flat_data[offset..end].to_vec();
+                images.push(ImageObs {
+                    camera: cam_name.clone(),
+                    width: *w as u32,
+                    height: *h as u32,
+                    channels: *c as u8,
+                    data,
+                });
+            }
         }
 
         // Reward
@@ -346,10 +319,7 @@ fn read_demo_group(
     }
 
     // ── Determine success ───────────────────────────────────
-    // robomimic convention: last reward > 0 means success
-    let success = rewards
-        .as_ref()
-        .and_then(|r| r.last().map(|&v| v > 0.0));
+    let success = rewards.as_ref().and_then(|r| r.last().map(|&v| v > 0.0));
 
     let total_reward = rewards.as_ref().map(|r| r.iter().sum());
 
@@ -366,9 +336,3 @@ fn read_demo_group(
 
     Ok(Episode { meta, frames })
 }
-
-// We also bring in ndarray since hdf5 crate uses it
-use hdf5;
-
-// Re-export ndarray types used by hdf5
-extern crate ndarray;

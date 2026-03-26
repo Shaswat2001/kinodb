@@ -21,8 +21,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::{
-    Episode, EpisodeId, EpisodeIndex, EpisodeMeta, FileHeader, Frame,
-    ImageObs, IndexEntry, HEADER_SIZE,
+    Episode, EpisodeId, EpisodeIndex, EpisodeMeta, FileHeader, Frame, ImageObs, IndexEntry,
+    HEADER_SIZE,
 };
 
 /// A reader for `.kdb` files.
@@ -45,13 +45,21 @@ pub enum ReadError {
     Header(crate::HeaderError),
     Index(crate::IndexError),
     /// Tried to access an episode position that doesn't exist.
-    EpisodeNotFound { position: usize },
+    EpisodeNotFound {
+        position: usize,
+    },
     /// Tried to find an episode by id that doesn't exist.
-    EpisodeIdNotFound { id: EpisodeId },
+    EpisodeIdNotFound {
+        id: EpisodeId,
+    },
     /// Data is truncated or corrupt.
-    UnexpectedEof { context: &'static str },
+    UnexpectedEof {
+        context: &'static str,
+    },
     /// A string in the file is not valid UTF-8.
-    InvalidUtf8 { context: &'static str },
+    InvalidUtf8 {
+        context: &'static str,
+    },
 }
 
 impl std::fmt::Display for ReadError {
@@ -240,8 +248,7 @@ impl KdbReader {
         let mut act_cursor = Cursor::new(&self.data[act_start..act_end]);
 
         // Pre-read all per-frame data from the actions section
-        let mut frame_data: Vec<(Vec<f32>, Vec<f32>, f32, bool)> =
-            Vec::with_capacity(num_frames);
+        let mut frame_data: Vec<(Vec<f32>, Vec<f32>, f32, bool)> = Vec::with_capacity(num_frames);
 
         for _ in 0..num_frames {
             let state = act_cursor.read_f32_vec(state_dim, "state")?;
