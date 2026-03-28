@@ -5,6 +5,7 @@ mod cmd_create_test;
 mod cmd_export;
 mod cmd_info;
 mod cmd_ingest;
+mod cmd_mix;
 
 /// kinodb — a high-performance trajectory database for robot learning.
 #[derive(Parser)]
@@ -88,6 +89,35 @@ enum Commands {
         #[arg(short = 'F', long, default_value = "numpy")]
         format: String,
     },
+
+    /// Create and inspect weighted dataset mixtures.
+    Mix {
+        /// Sources in "path:weight" format. Can be repeated.
+        /// Example: --source bridge.kdb:0.4 --source aloha.kdb:0.6
+        #[arg(short, long, required = true, value_parser = parse_source)]
+        source: Vec<(String, f64)>,
+
+        /// Random seed for sampling.
+        #[arg(long, default_value = "42")]
+        seed: u64,
+
+        /// Sample N episodes and show the empirical distribution.
+        #[arg(long)]
+        sample: Option<usize>,
+    },
+}
+
+/// Parse "path:weight" string into (String, f64).
+fn parse_source(s: &str) -> Result<(String, f64), String> {
+    if let Some((path, weight_str)) = s.rsplit_once(':') {
+        let weight: f64 = weight_str
+            .parse()
+            .map_err(|_| format!("invalid weight '{}' in '{}'", weight_str, s))?;
+        Ok((path.to_string(), weight))
+    } else {
+        // No weight specified — default to 1.0
+        Ok((s.to_string(), 1.0))
+    }
 }
 
 fn main() {
@@ -123,6 +153,11 @@ fn main() {
             output,
             format,
         } => cmd_export::run(&kdb_path, &output, &format),
+        Commands::Mix {
+            source,
+            seed,
+            sample,
+        } => cmd_mix::run(&source, seed, sample),
     };
 
     if let Err(e) = result {

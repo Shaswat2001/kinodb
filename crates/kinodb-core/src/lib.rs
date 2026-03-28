@@ -13,12 +13,14 @@
 
 mod header;
 mod index;
+mod mixture;
 mod reader;
 mod types;
 mod writer;
 
 pub use header::*;
 pub use index::*;
+pub use mixture::*;
 pub use reader::*;
 pub use types::*;
 pub use writer::*;

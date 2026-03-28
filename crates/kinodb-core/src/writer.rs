@@ -128,7 +128,7 @@ impl KdbWriter {
         // ── 2. Write actions (all frames, packed f32s) ──────
         let action_dim = episode.meta.action_dim as usize;
         let actions_offset = self.pos;
-        for (_i, frame) in episode.frames.iter().enumerate() {
+        for frame in episode.frames.iter() {
             if frame.action.len() != action_dim {
                 return Err(WriteError::InconsistentActionDim {
                     episode_id: episode_id.0,

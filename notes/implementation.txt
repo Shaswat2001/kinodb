@@ -25,3 +25,49 @@
 3. for i in 0..reader.num_episodes() 
     Looping within the desired range, meaning looping from 0 but not including reader.num_episodes()
     so if reader.num_episodes() is equal to 5, the loop will run from 0, 1, 2, 3, 4
+
+4. Enum creation - 
+    pub enum MixError {
+        Read(ReadError),
+        NoSources,
+        ZeroWeight { path: String },
+        Io(std::io::Error),
+    }
+
+    Read -> Error caused by reading something. Tuple variant.
+    NoSources -> Unit variant 
+    ZeroWeight -> Struct error with no weight, path is which struct path it is.
+    Io -> Wraps standard IO errors.
+
+5. Custom error handling for Enum - 
+    impl std::fmt::Display for MixError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                MixError::Read(e) => write!(f, "read error: {}", e),
+                MixError::NoSources => write!(f, "mixture has no sources"),
+                MixError::ZeroWeight { path } => write!(f, "zero weight for {}", path),
+                MixError::Io(e) => write!(f, "I/O error: {}", e),
+            }
+        }
+    }
+
+    This defines:
+        How MixError should be printed as a user-friendly message.
+        Without this, printing would look like:
+            Read(ReadError(...))
+        With this, you get:
+            read error: failed to parse dataset
+
+6. Making Enum part of Rust error system - 
+    impl std::error::Error for MixError {}
+
+7. Making a constructor for the class - 
+    impl MixtureBuilder {
+    /// Create a new builder.
+        pub fn new() -> Self {
+            Self {
+                entries: Vec::new(),
+                seed: 42,
+            }
+        }
+    }
