@@ -6,6 +6,7 @@ mod cmd_export;
 mod cmd_info;
 mod cmd_ingest;
 mod cmd_mix;
+mod cmd_query;
 
 /// kinodb — a high-performance trajectory database for robot learning.
 #[derive(Parser)]
@@ -105,6 +106,19 @@ enum Commands {
         #[arg(long)]
         sample: Option<usize>,
     },
+
+    /// Filter episodes using KQL (Kino Query Language).
+    Query {
+        /// Path to the .kdb file.
+        kdb_path: String,
+
+        /// KQL query string. Example: "embodiment = 'franka' AND success = true"
+        query: String,
+
+        /// Maximum number of results to show.
+        #[arg(short, long)]
+        limit: Option<usize>,
+    },
 }
 
 /// Parse "path:weight" string into (String, f64).
@@ -158,6 +172,11 @@ fn main() {
             seed,
             sample,
         } => cmd_mix::run(&source, seed, sample),
+        Commands::Query {
+            kdb_path,
+            query,
+            limit,
+        } => cmd_query::run(&kdb_path, &query, limit),
     };
 
     if let Err(e) = result {

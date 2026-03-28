@@ -13,6 +13,7 @@
 
 mod header;
 mod index;
+pub mod kql;
 mod mixture;
 mod reader;
 mod types;
