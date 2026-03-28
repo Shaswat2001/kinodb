@@ -71,3 +71,15 @@
             }
         }
     }
+
+8. Python exposed wrapper for Rust Struct
+
+    #[pyclass(name = "Database")]
+    struct PyDatabase {
+        reader: KdbReader,
+        path: String
+    }
+
+    So this defined Rust structure, that will appear as Python class called Database. 
+
+    db = Database("data.kdb") -> but internally it will use Rust. 

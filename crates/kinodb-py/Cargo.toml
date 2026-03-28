@@ -1,0 +1,14 @@
+[package]
+name = "kinodb-py"
+version = "0.1.0"
+edition = "2021"
+description = "Python bindings for kinodb — a trajectory database for robot learning"
+license = "MIT OR Apache-2.0"
+
+[lib]
+name = "kinodb"
+crate-type = ["cdylib"]
+
+[dependencies]
+kinodb-core = { path = "../kinodb-core" }
+pyo3 = { version = "0.22", features = ["extension-module"] }
