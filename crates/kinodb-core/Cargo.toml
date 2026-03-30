@@ -6,3 +6,4 @@ description = "Core storage engine for kinodb — a trajectory database for robo
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+memmap2 = "0.9"

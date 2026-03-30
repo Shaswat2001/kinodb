@@ -1,7 +1,8 @@
 //! Read episodes from a `.kdb` file.
 //!
-//! The reader opens a file, validates the header, loads the episode
-//! index, and then lets you read individual episodes by id or position.
+//! The reader memory-maps the file for zero-copy access. The OS pages
+//! in only the data you actually read, so opening a multi-GB database
+//! is instant and uses minimal RAM.
 //!
 //! ```ignore
 //! let reader = KdbReader::open("data.kdb")?;
@@ -21,16 +22,33 @@ use std::fs;
 use std::path::Path;
 
 use crate::{
-    Episode, EpisodeId, EpisodeIndex, EpisodeMeta, FileHeader, Frame, ImageObs, IndexEntry,
+    Episode, EpisodeId, EpisodeIndex, EpisodeMeta, FileHeader, Frame,
+    ImageObs, IndexEntry, HEADER_SIZE,
 };
+
+/// Backing storage for the reader — either mmap or owned bytes.
+enum Storage {
+    Mmap(memmap2::Mmap),
+    Bytes(Vec<u8>),
+}
+
+impl std::ops::Deref for Storage {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Storage::Mmap(m) => m,
+            Storage::Bytes(v) => v,
+        }
+    }
+}
 
 /// A reader for `.kdb` files.
 ///
-/// Loads the entire file into memory for now. Later we'll switch to
-/// memory-mapped I/O — the API won't change.
+/// Uses memory-mapped I/O by default. The OS lazily pages in only the
+/// data you access, so opening a large file is near-instant.
 pub struct KdbReader {
-    /// Raw file bytes.
-    data: Vec<u8>,
+    /// Memory-mapped file data (or owned bytes for testing).
+    data: Storage,
     /// Parsed file header.
     header: FileHeader,
     /// Parsed episode index.
@@ -44,21 +62,13 @@ pub enum ReadError {
     Header(crate::HeaderError),
     Index(crate::IndexError),
     /// Tried to access an episode position that doesn't exist.
-    EpisodeNotFound {
-        position: usize,
-    },
+    EpisodeNotFound { position: usize },
     /// Tried to find an episode by id that doesn't exist.
-    EpisodeIdNotFound {
-        id: EpisodeId,
-    },
+    EpisodeIdNotFound { id: EpisodeId },
     /// Data is truncated or corrupt.
-    UnexpectedEof {
-        context: &'static str,
-    },
+    UnexpectedEof { context: &'static str },
     /// A string in the file is not valid UTF-8.
-    InvalidUtf8 {
-        context: &'static str,
-    },
+    InvalidUtf8 { context: &'static str },
 }
 
 impl std::fmt::Display for ReadError {
@@ -104,10 +114,27 @@ impl From<crate::IndexError> for ReadError {
 }
 
 impl KdbReader {
-    /// Open and validate a `.kdb` file.
+    /// Open and validate a `.kdb` file using memory-mapped I/O.
+    ///
+    /// The file is mapped into the process address space but not read
+    /// into RAM until accessed. This means opening a 10 GB file is
+    /// near-instant and uses negligible memory.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, ReadError> {
-        let data = fs::read(path)?;
+        let file = fs::File::open(path)?;
+        // SAFETY: we treat the mmap as read-only and the file is not
+        // modified while the reader exists. This is the standard
+        // usage pattern for memmap2.
+        let mmap = unsafe { memmap2::Mmap::map(&file)? };
+        Self::from_storage(Storage::Mmap(mmap))
+    }
 
+    /// Open from an in-memory byte buffer (useful for tests).
+    pub fn open_from_bytes(data: Vec<u8>) -> Result<Self, ReadError> {
+        Self::from_storage(Storage::Bytes(data))
+    }
+
+    /// Shared init logic for both open paths.
+    fn from_storage(data: Storage) -> Result<Self, ReadError> {
         let header = FileHeader::from_bytes(&data)?;
 
         let idx_start = header.index_offset as usize;
@@ -247,7 +274,8 @@ impl KdbReader {
         let mut act_cursor = Cursor::new(&self.data[act_start..act_end]);
 
         // Pre-read all per-frame data from the actions section
-        let mut frame_data: Vec<(Vec<f32>, Vec<f32>, f32, bool)> = Vec::with_capacity(num_frames);
+        let mut frame_data: Vec<(Vec<f32>, Vec<f32>, f32, bool)> =
+            Vec::with_capacity(num_frames);
 
         for _ in 0..num_frames {
             let state = act_cursor.read_f32_vec(state_dim, "state")?;
