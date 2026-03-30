@@ -1,13 +1,14 @@
 use clap::{Parser, Subcommand};
 use std::process;
 
-mod cmd_bench;
-mod cmd_create_test;
-mod cmd_export;
 mod cmd_info;
+mod cmd_create_test;
 mod cmd_ingest;
+mod cmd_export;
 mod cmd_mix;
 mod cmd_query;
+mod cmd_bench;
+mod cmd_schema;
 
 /// kinodb — a high-performance trajectory database for robot learning.
 #[derive(Parser)]
@@ -135,6 +136,12 @@ enum Commands {
         #[arg(long)]
         images: bool,
     },
+
+    /// Print the schema and structure of a .kdb file.
+    Schema {
+        /// Path to the .kdb file.
+        path: String,
+    },
 }
 
 /// Parse "path:weight" string into (String, f64).
@@ -198,6 +205,7 @@ fn main() {
             frames,
             images,
         } => cmd_bench::run(num_episodes, frames, images),
+        Commands::Schema { path } => cmd_schema::run(&path),
     };
 
     if let Err(e) = result {
