@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use std::process;
 
+mod cmd_bench;
 mod cmd_create_test;
 mod cmd_export;
 mod cmd_info;
@@ -119,6 +120,21 @@ enum Commands {
         #[arg(short, long)]
         limit: Option<usize>,
     },
+
+    /// Run performance benchmarks (write, read, query).
+    Bench {
+        /// Number of episodes to generate for the benchmark.
+        #[arg(short = 'n', long, default_value = "500")]
+        num_episodes: u32,
+
+        /// Frames per episode.
+        #[arg(short, long, default_value = "50")]
+        frames: u32,
+
+        /// Include 64x64 RGB images in the benchmark.
+        #[arg(long)]
+        images: bool,
+    },
 }
 
 /// Parse "path:weight" string into (String, f64).
@@ -177,6 +193,11 @@ fn main() {
             query,
             limit,
         } => cmd_query::run(&kdb_path, &query, limit),
+        Commands::Bench {
+            num_episodes,
+            frames,
+            images,
+        } => cmd_bench::run(num_episodes, frames, images),
     };
 
     if let Err(e) = result {
