@@ -11,6 +11,8 @@
 //! ## Status
 //! 🚧 Early development — API will change.
 
+mod header;
 mod types;
 
+pub use header::*;
 pub use types::*;
