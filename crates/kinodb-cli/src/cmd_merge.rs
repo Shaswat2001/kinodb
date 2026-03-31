@@ -1,4 +1,4 @@
-use kinodb_core::{KdbReader, KdbWriter, kql};
+use kinodb_core::{kql, KdbReader, KdbWriter};
 
 pub fn run(
     inputs: &[String],
@@ -49,10 +49,7 @@ pub fn run(
             file_written += 1;
         }
 
-        println!(
-            "  {} — {}/{} episodes written",
-            input_path, file_written, n
-        );
+        println!("  {} — {}/{} episodes written", input_path, file_written, n);
     }
 
     writer.finish()?;
