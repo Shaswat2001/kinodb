@@ -44,6 +44,9 @@ pub struct Hdf5IngestConfig {
 
     /// If set, only ingest the first N episodes.
     pub max_episodes: Option<usize>,
+
+    /// JPEG compress images (quality 1-100). None = store raw pixels.
+    pub compress: Option<u8>,
 }
 
 impl Default for Hdf5IngestConfig {
@@ -53,6 +56,7 @@ impl Default for Hdf5IngestConfig {
             task: None,
             fps: 10.0,
             max_episodes: None,
+            compress: None,
         }
     }
 }
@@ -151,7 +155,10 @@ pub fn ingest_hdf5(
             .to_string()
     });
 
-    let mut writer = KdbWriter::create(output_path)?;
+    let mut writer = match config.compress {
+        Some(q) => KdbWriter::create_compressed(output_path, q)?,
+        None => KdbWriter::create(output_path)?,
+    };
     let mut total_frames: u64 = 0;
 
     for (idx, demo_name) in demo_names.iter().enumerate() {

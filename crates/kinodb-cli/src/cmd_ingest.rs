@@ -10,9 +10,10 @@ pub fn run(
     task: Option<&str>,
     fps: f32,
     max_episodes: Option<usize>,
+    compress: Option<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match format {
-        "hdf5" => run_hdf5(src, output, embodiment, task, fps, max_episodes),
+        "hdf5" => run_hdf5(src, output, embodiment, task, fps, max_episodes, compress),
         "lerobot" => run_lerobot(src, output, embodiment, task, max_episodes),
         "rlds" | "tfrecord" => run_rlds(src, output, embodiment, task, fps, max_episodes),
         other => {
@@ -32,6 +33,7 @@ fn run_hdf5(
     task: Option<&str>,
     fps: f32,
     max_episodes: Option<usize>,
+    compress: Option<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Ingesting HDF5: {}", src);
     println!("  Output:     {}", output);
@@ -43,6 +45,9 @@ fn run_hdf5(
     if let Some(max) = max_episodes {
         println!("  Max episodes: {}", max);
     }
+    if let Some(q) = compress {
+        println!("  Compress:   JPEG quality {}", q);
+    }
     println!();
 
     let config = Hdf5IngestConfig {
@@ -50,6 +55,7 @@ fn run_hdf5(
         task: task.map(|s| s.to_string()),
         fps,
         max_episodes,
+        compress,
     };
 
     let result = hdf5::ingest_hdf5(src, output, &config)?;

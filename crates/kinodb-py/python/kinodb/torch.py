@@ -87,14 +87,10 @@ class KinoMapDataset:
         """Convert a raw kinodb episode dict into a training-ready sample."""
         meta = ep["meta"]
 
-        # Actions: (num_frames, action_dim) float32
-        actions = np.array(ep["actions"], dtype=np.float32)
-
-        # States: (num_frames, state_dim) float32
-        states = np.array(ep["states"], dtype=np.float32)
-
-        # Rewards: (num_frames,) float32
-        rewards = np.array(ep["rewards"], dtype=np.float32)
+        # Actions/states/rewards are already numpy arrays from Rust
+        actions = np.asarray(ep["actions"], dtype=np.float32)
+        states = np.asarray(ep["states"], dtype=np.float32)
+        rewards = np.asarray(ep["rewards"], dtype=np.float32)
 
         result = {
             "action": actions,
@@ -106,25 +102,15 @@ class KinoMapDataset:
             "episode_id": meta["episode_id"],
         }
 
-        # Images: pick one camera, stack across frames
-        if ep["images"] and ep["images"][0]:
+        # Images: now a dict of camera_name -> numpy uint8 (T, H, W, C)
+        images_data = ep.get("images", {})
+        if isinstance(images_data, dict) and images_data:
             cam_name = self.image_key
             if cam_name is None:
-                # Use first camera
-                cam_name = ep["images"][0][0]["camera"]
+                cam_name = next(iter(images_data))
 
-            frames = []
-            for frame_imgs in ep["images"]:
-                for img in frame_imgs:
-                    if img["camera"] == cam_name:
-                        h, w, c = img["height"], img["width"], img["channels"]
-                        pixels = np.frombuffer(img["data"], dtype=np.uint8).reshape(h, w, c)
-                        frames.append(pixels)
-                        break
-
-            if frames:
-                # (num_frames, H, W, C)
-                images = np.stack(frames, axis=0)
+            if cam_name in images_data:
+                images = np.asarray(images_data[cam_name])
 
                 # Optional resize
                 if self.image_size is not None:
@@ -261,9 +247,9 @@ class KinoIterDataset:
     def _episode_to_sample(self, ep: dict) -> Dict[str, object]:
         """Same conversion as KinoMapDataset."""
         meta = ep["meta"]
-        actions = np.array(ep["actions"], dtype=np.float32)
-        states = np.array(ep["states"], dtype=np.float32)
-        rewards = np.array(ep["rewards"], dtype=np.float32)
+        actions = np.asarray(ep["actions"], dtype=np.float32)
+        states = np.asarray(ep["states"], dtype=np.float32)
+        rewards = np.asarray(ep["rewards"], dtype=np.float32)
 
         result = {
             "action": actions,
@@ -275,18 +261,11 @@ class KinoIterDataset:
             "episode_id": meta["episode_id"],
         }
 
-        if ep["images"] and ep["images"][0]:
-            cam_name = self.image_key or ep["images"][0][0]["camera"]
-            frames = []
-            for frame_imgs in ep["images"]:
-                for img in frame_imgs:
-                    if img["camera"] == cam_name:
-                        h, w, c = img["height"], img["width"], img["channels"]
-                        pixels = np.frombuffer(img["data"], dtype=np.uint8).reshape(h, w, c)
-                        frames.append(pixels)
-                        break
-            if frames:
-                images = np.stack(frames, axis=0)
+        images_data = ep.get("images", {})
+        if isinstance(images_data, dict) and images_data:
+            cam_name = self.image_key or next(iter(images_data))
+            if cam_name in images_data:
+                images = np.asarray(images_data[cam_name])
                 if self.image_size is not None:
                     images = KinoMapDataset._resize_batch(images, self.image_size)
                 images = images.astype(np.float32) / 255.0

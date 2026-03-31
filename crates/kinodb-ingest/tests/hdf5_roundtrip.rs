@@ -96,6 +96,7 @@ fn hdf5_roundtrip_no_images() {
         task: Some("pick up the block".to_string()),
         fps: 20.0,
         max_episodes: None,
+        compress: None,
     };
 
     let result = ingest_hdf5(hdf5_path, kdb_path, &config).unwrap();
@@ -147,6 +148,7 @@ fn hdf5_roundtrip_with_images() {
         task: Some("open drawer".to_string()),
         fps: 10.0,
         max_episodes: None,
+        compress: None,
     };
 
     let result = ingest_hdf5(hdf5_path, kdb_path, &config).unwrap();
@@ -188,6 +190,7 @@ fn hdf5_max_episodes_limit() {
         task: None, // should fall back to filename
         fps: 5.0,
         max_episodes: Some(3),
+        compress: None,
     };
 
     let result = ingest_hdf5(hdf5_path, kdb_path, &config).unwrap();

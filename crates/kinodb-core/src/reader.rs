@@ -354,6 +354,58 @@ impl KdbReader {
 
         Ok(frames)
     }
+
+    /// Decode frames from the actions section only — skip images entirely.
+    /// Much faster for image-heavy datasets.
+    fn decode_frames_no_images(&self, entry: &IndexEntry) -> Result<Vec<Frame>, ReadError> {
+        let state_dim = entry.state_dim as usize;
+        let action_dim = entry.action_dim as usize;
+        let num_frames = entry.num_frames as usize;
+
+        let act_start = entry.actions_offset as usize;
+        let act_end = act_start + entry.actions_length as usize;
+        if act_end > self.data.len() {
+            return Err(ReadError::UnexpectedEof {
+                context: "actions data",
+            });
+        }
+        let mut act_cursor = Cursor::new(&self.data[act_start..act_end]);
+
+        let mut frames = Vec::with_capacity(num_frames);
+        for t in 0..num_frames {
+            let state = act_cursor.read_f32_vec(state_dim, "state")?;
+            let action = act_cursor.read_f32_vec(action_dim, "action")?;
+            let reward = act_cursor.read_f32("reward")?;
+            let is_terminal = act_cursor.read_u8("is_terminal")? != 0;
+
+            frames.push(Frame {
+                timestep: t as u32,
+                images: vec![],
+                state,
+                action,
+                reward: Some(reward),
+                is_terminal,
+            });
+        }
+
+        Ok(frames)
+    }
+
+    /// Read an episode's actions and states only (no images).
+    ///
+    /// Much faster than `read_episode` for image-heavy datasets since
+    /// it skips the image section entirely.
+    pub fn read_episode_actions_only(&self, position: usize) -> Result<Episode, ReadError> {
+        let entry = self
+            .index
+            .get(position)
+            .ok_or(ReadError::EpisodeNotFound { position })?
+            .clone();
+
+        let meta = self.decode_meta(&entry)?;
+        let frames = self.decode_frames_no_images(&entry)?;
+        Ok(Episode { meta, frames })
+    }
 }
 
 // ── Cursor: a tiny helper for reading from a byte slice ─────────
@@ -428,14 +480,14 @@ fn decompress_jpeg(
     jpeg_data: &[u8],
     expected_width: u32,
     expected_height: u32,
-    expected_channels: u8,
+    _expected_channels: u8,
 ) -> Result<Vec<u8>, ReadError> {
-    use image::io::Reader as ImageReader;
+    use image::ImageReader;
     use std::io::Cursor;
 
     let reader = ImageReader::with_format(Cursor::new(jpeg_data), image::ImageFormat::Jpeg);
 
-    let img = reader.decode().map_err(|e| ReadError::UnexpectedEof {
+    let img = reader.decode().map_err(|_| ReadError::UnexpectedEof {
         context: "jpeg decode failed",
     })?;
 

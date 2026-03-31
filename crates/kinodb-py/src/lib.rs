@@ -28,10 +28,11 @@
 //! print(f"{len(hits)} matching episodes")
 //! ```
 
-use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::exceptions::{PyIOError, PyValueError, PyIndexError};
+use numpy::PyArrayMethods;
 
-use kinodb_core::{kql, KdbReader};
+use kinodb_core::{KdbReader, kql};
 
 /// A kinodb database reader, exposed to Python.
 #[pyclass(name = "Database")]
@@ -65,10 +66,9 @@ impl PyDatabase {
 
     /// Read metadata for one episode (by position). Returns a dict.
     fn read_meta(&self, position: usize) -> PyResult<PyObject> {
-        let meta = self
-            .reader
-            .read_meta(position)
-            .map_err(|e| PyIndexError::new_err(format!("{}", e)))?;
+        let meta = self.reader.read_meta(position).map_err(|e| {
+            PyIndexError::new_err(format!("{}", e))
+        })?;
 
         Python::with_gil(|py| {
             let dict = pyo3::types::PyDict::new_bound(py);
@@ -88,16 +88,15 @@ impl PyDatabase {
     ///
     /// The dict contains:
     ///   - "meta": dict (same as read_meta)
-    ///   - "states": list of list of floats (one per frame)
-    ///   - "actions": list of list of floats (one per frame)
-    ///   - "rewards": list of floats
+    ///   - "states": numpy float32 array, shape (num_frames, state_dim)
+    ///   - "actions": numpy float32 array, shape (num_frames, action_dim)
+    ///   - "rewards": numpy float32 array, shape (num_frames,)
     ///   - "is_terminal": list of bools
-    ///   - "images": list of dicts per frame, each with camera entries
+    ///   - "images": dict of camera_name -> numpy uint8 array, shape (num_frames, H, W, C)
     fn read_episode(&self, position: usize) -> PyResult<PyObject> {
-        let episode = self
-            .reader
-            .read_episode(position)
-            .map_err(|e| PyIndexError::new_err(format!("{}", e)))?;
+        let episode = self.reader.read_episode(position).map_err(|e| {
+            PyIndexError::new_err(format!("{}", e))
+        })?;
 
         Python::with_gil(|py| {
             let result = pyo3::types::PyDict::new_bound(py);
@@ -114,43 +113,145 @@ impl PyDatabase {
             meta_dict.set_item("total_reward", episode.meta.total_reward)?;
             result.set_item("meta", meta_dict)?;
 
-            // States
-            let states: Vec<Vec<f32>> = episode.frames.iter().map(|f| f.state.clone()).collect();
-            result.set_item("states", states)?;
+            let num_frames = episode.frames.len();
 
-            // Actions
-            let actions: Vec<Vec<f32>> = episode.frames.iter().map(|f| f.action.clone()).collect();
-            result.set_item("actions", actions)?;
+            // Actions: flatten into contiguous buffer, return as 2D numpy array
+            if num_frames > 0 {
+                let action_dim = episode.frames[0].action.len();
+                let mut action_buf: Vec<f32> = Vec::with_capacity(num_frames * action_dim);
+                for frame in &episode.frames {
+                    action_buf.extend_from_slice(&frame.action);
+                }
+                let action_array = numpy::PyArray2::from_vec2_bound(
+                    py,
+                    &episode.frames.iter().map(|f| f.action.clone()).collect::<Vec<_>>(),
+                ).map_err(|e| PyValueError::new_err(format!("actions array: {}", e)))?;
+                result.set_item("actions", action_array)?;
 
-            // Rewards
-            let rewards: Vec<f32> = episode
-                .frames
-                .iter()
-                .map(|f| f.reward.unwrap_or(0.0))
-                .collect();
-            result.set_item("rewards", rewards)?;
+                // States: same approach
+                let state_dim = episode.frames[0].state.len();
+                let state_array = numpy::PyArray2::from_vec2_bound(
+                    py,
+                    &episode.frames.iter().map(|f| f.state.clone()).collect::<Vec<_>>(),
+                ).map_err(|e| PyValueError::new_err(format!("states array: {}", e)))?;
+                result.set_item("states", state_array)?;
 
-            // Terminals
+                // Rewards: 1D numpy array
+                let rewards: Vec<f32> = episode.frames.iter().map(|f| f.reward.unwrap_or(0.0)).collect();
+                let reward_array = numpy::PyArray1::from_vec_bound(py, rewards);
+                result.set_item("rewards", reward_array)?;
+            } else {
+                // Empty episode
+                let empty_2d = numpy::PyArray2::<f32>::zeros_bound(py, [0, 0], false);
+                result.set_item("actions", &empty_2d)?;
+                result.set_item("states", &empty_2d)?;
+                let empty_1d = numpy::PyArray1::<f32>::zeros_bound(py, [0], false);
+                result.set_item("rewards", &empty_1d)?;
+            }
+
+            // Terminals (bool list — small, no need for numpy)
             let terminals: Vec<bool> = episode.frames.iter().map(|f| f.is_terminal).collect();
             result.set_item("is_terminal", terminals)?;
 
-            // Images: list of list of dicts
-            // images[frame_idx] = [{"camera": str, "width": int, ...}, ...]
-            let mut all_frame_images: Vec<PyObject> = Vec::new();
-            for frame in &episode.frames {
-                let frame_imgs = pyo3::types::PyList::empty_bound(py);
-                for img in &frame.images {
-                    let img_dict = pyo3::types::PyDict::new_bound(py);
-                    img_dict.set_item("camera", &img.camera)?;
-                    img_dict.set_item("width", img.width)?;
-                    img_dict.set_item("height", img.height)?;
-                    img_dict.set_item("channels", img.channels)?;
-                    img_dict.set_item("data", pyo3::types::PyBytes::new_bound(py, &img.data))?;
-                    frame_imgs.append(img_dict)?;
+            // Images: group by camera, return as dict of numpy arrays
+            // { "front": numpy uint8 (T, H, W, C), "wrist": numpy uint8 (T, H, W, C) }
+            if num_frames > 0 && !episode.frames[0].images.is_empty() {
+                let images_dict = pyo3::types::PyDict::new_bound(py);
+
+                // Collect camera names from first frame
+                let cameras: Vec<String> = episode.frames[0].images.iter()
+                    .map(|img| img.camera.clone())
+                    .collect();
+
+                for cam_name in &cameras {
+                    // Collect all frames for this camera into one contiguous buffer
+                    let mut found_dims = None;
+                    let mut buf: Vec<u8> = Vec::new();
+                    let mut valid_frames = 0usize;
+
+                    for frame in &episode.frames {
+                        for img in &frame.images {
+                            if &img.camera == cam_name {
+                                if found_dims.is_none() {
+                                    found_dims = Some((img.height, img.width, img.channels));
+                                }
+                                buf.extend_from_slice(&img.data);
+                                valid_frames += 1;
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some((h, w, c)) = found_dims {
+                        if valid_frames > 0 {
+                            let expected = valid_frames * (h as usize) * (w as usize) * (c as usize);
+                            if buf.len() == expected {
+                                let flat = numpy::PyArray1::from_vec_bound(py, buf);
+                                let shape = [valid_frames, h as usize, w as usize, c as usize];
+                                let array = flat.reshape(shape)
+                                    .map_err(|e| PyValueError::new_err(format!("image reshape: {}", e)))?;
+                                images_dict.set_item(cam_name, array)?;
+                            }
+                        }
+                    }
                 }
-                all_frame_images.push(frame_imgs.into());
+
+                result.set_item("images", images_dict)?;
+            } else {
+                result.set_item("images", pyo3::types::PyDict::new_bound(py))?;
             }
-            result.set_item("images", all_frame_images)?;
+
+            Ok(result.into())
+        })
+    }
+
+    /// Read an episode's actions and states only (no images). Much faster.
+    ///
+    /// Returns a dict with "meta", "actions" (numpy), "states" (numpy),
+    /// "rewards" (numpy), "is_terminal". No "images" key.
+    fn read_episode_actions_only(&self, position: usize) -> PyResult<PyObject> {
+        let episode = self.reader.read_episode_actions_only(position).map_err(|e| {
+            PyIndexError::new_err(format!("{}", e))
+        })?;
+
+        Python::with_gil(|py| {
+            let result = pyo3::types::PyDict::new_bound(py);
+
+            let meta_dict = pyo3::types::PyDict::new_bound(py);
+            meta_dict.set_item("episode_id", episode.meta.id.0)?;
+            meta_dict.set_item("embodiment", &episode.meta.embodiment)?;
+            meta_dict.set_item("task", &episode.meta.language_instruction)?;
+            meta_dict.set_item("num_frames", episode.meta.num_frames)?;
+            meta_dict.set_item("fps", episode.meta.fps)?;
+            meta_dict.set_item("action_dim", episode.meta.action_dim)?;
+            meta_dict.set_item("success", episode.meta.success)?;
+            meta_dict.set_item("total_reward", episode.meta.total_reward)?;
+            result.set_item("meta", meta_dict)?;
+
+            let num_frames = episode.frames.len();
+            if num_frames > 0 {
+                let action_array = numpy::PyArray2::from_vec2_bound(
+                    py,
+                    &episode.frames.iter().map(|f| f.action.clone()).collect::<Vec<_>>(),
+                ).map_err(|e| PyValueError::new_err(format!("actions: {}", e)))?;
+                result.set_item("actions", action_array)?;
+
+                let state_array = numpy::PyArray2::from_vec2_bound(
+                    py,
+                    &episode.frames.iter().map(|f| f.state.clone()).collect::<Vec<_>>(),
+                ).map_err(|e| PyValueError::new_err(format!("states: {}", e)))?;
+                result.set_item("states", state_array)?;
+
+                let rewards: Vec<f32> = episode.frames.iter().map(|f| f.reward.unwrap_or(0.0)).collect();
+                result.set_item("rewards", numpy::PyArray1::from_vec_bound(py, rewards))?;
+            } else {
+                result.set_item("actions", numpy::PyArray2::<f32>::zeros_bound(py, [0, 0], false))?;
+                result.set_item("states", numpy::PyArray2::<f32>::zeros_bound(py, [0, 0], false))?;
+                result.set_item("rewards", numpy::PyArray1::<f32>::zeros_bound(py, [0], false))?;
+            }
+
+            let terminals: Vec<bool> = episode.frames.iter().map(|f| f.is_terminal).collect();
+            result.set_item("is_terminal", terminals)?;
 
             Ok(result.into())
         })
@@ -159,8 +260,9 @@ impl PyDatabase {
     /// Filter episodes using a KQL query string.
     /// Returns a list of matching episode positions (ints).
     fn query(&self, query_str: &str) -> PyResult<Vec<usize>> {
-        kql::filter_reader(&self.reader, query_str)
-            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+        kql::filter_reader(&self.reader, query_str).map_err(|e| {
+            PyValueError::new_err(format!("{}", e))
+        })
     }
 
     /// Get a summary string (like `kino info`).
@@ -194,8 +296,9 @@ impl PyDatabase {
 /// Open a .kdb database file. Returns a Database object.
 #[pyfunction]
 fn open(path: &str) -> PyResult<PyDatabase> {
-    let reader = KdbReader::open(path)
-        .map_err(|e| PyIOError::new_err(format!("failed to open '{}': {}", path, e)))?;
+    let reader = KdbReader::open(path).map_err(|e| {
+        PyIOError::new_err(format!("failed to open '{}': {}", path, e))
+    })?;
     Ok(PyDatabase {
         reader,
         path: path.to_string(),

@@ -83,6 +83,10 @@ enum Commands {
         /// Only ingest the first N episodes.
         #[arg(long)]
         max_episodes: Option<usize>,
+
+        /// JPEG compress images (quality 1-100, recommended 85).
+        #[arg(long)]
+        compress: Option<u8>,
     },
 
     /// Export a .kdb file to standard formats (numpy binary + JSON).
@@ -208,6 +212,7 @@ fn main() {
             task,
             fps,
             max_episodes,
+            compress,
         } => cmd_ingest::run(
             &src,
             &output,
@@ -216,6 +221,7 @@ fn main() {
             task.as_deref(),
             fps,
             max_episodes,
+            compress,
         ),
         Commands::Export {
             kdb_path,
