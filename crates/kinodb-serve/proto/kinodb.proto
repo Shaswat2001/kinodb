@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package kinodb;
+
+// ── Service ─────────────────────────────────────────────────
+
+service KinoService {
+  // Get full episode by position index.
+  rpc GetEpisode(EpisodeRequest) returns (EpisodeResponse);
+
+  // Get just the metadata (cheap — no frame data).
+  rpc GetMeta(MetaRequest) returns (MetaResponse);
+
+  // Get a batch of episodes (for training).
+  rpc GetBatch(BatchRequest) returns (BatchResponse);
+
+  // Filter episodes with a KQL query string.
+  rpc Query(QueryRequest) returns (QueryResponse);
+
+  // Server status and dataset info.
+  rpc ServerInfo(InfoRequest) returns (InfoResponse);
+}
+
+// ── Requests ────────────────────────────────────────────────
+
+message EpisodeRequest {
+  uint64 position = 1;
+}
+
+message MetaRequest {
+  uint64 position = 1;
+}
+
+message BatchRequest {
+  // How many episodes to return.
+  uint32 batch_size = 1;
+  // Sampling mode: "sequential" (from offset), "random", "weighted" (for mixtures).
+  string mode = 2;
+  // Starting offset for sequential mode.
+  uint64 offset = 3;
+  // Random seed for reproducibility (0 = server picks).
+  uint64 seed = 4;
+  // Whether to include image data (can be large).
+  bool include_images = 5;
+}
+
+message QueryRequest {
+  // KQL query string, e.g. "embodiment = 'franka' AND success = true"
+  string kql = 1;
+  // Max results to return (0 = all).
+  uint32 limit = 2;
+}
+
+message InfoRequest {}
+
+// ── Responses ───────────────────────────────────────────────
+
+message EpisodeMeta {
+  uint64 episode_id = 1;
+  string embodiment = 2;
+  string task = 3;
+  uint32 num_frames = 4;
+  float fps = 5;
+  uint32 action_dim = 6;
+  bool has_success = 7;
+  bool success = 8;
+  bool has_reward = 9;
+  float total_reward = 10;
+}
+
+message Frame {
+  uint32 timestep = 1;
+  repeated float state = 2;
+  repeated float action = 3;
+  float reward = 4;
+  bool is_terminal = 5;
+  repeated ImageObs images = 6;
+}
+
+message ImageObs {
+  string camera = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  uint32 channels = 4;
+  bytes data = 5;
+}
+
+message Episode {
+  EpisodeMeta meta = 1;
+  repeated Frame frames = 2;
+}
+
+message EpisodeResponse {
+  Episode episode = 1;
+}
+
+message MetaResponse {
+  EpisodeMeta meta = 1;
+}
+
+message BatchResponse {
+  repeated Episode episodes = 1;
+}
+
+message QueryResponse {
+  // Positions of matching episodes.
+  repeated uint64 positions = 1;
+  // Optionally include metadata for each match.
+  repeated EpisodeMeta metas = 2;
+  uint64 total_matches = 3;
+}
+
+message InfoResponse {
+  uint64 num_episodes = 1;
+  uint64 num_frames = 2;
+  uint32 num_sources = 3;
+  string version = 4;
+  repeated string sources = 5;
+}

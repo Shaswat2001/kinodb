@@ -7,3 +7,4 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 memmap2 = "0.9"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }

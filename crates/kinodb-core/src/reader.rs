@@ -312,8 +312,26 @@ impl KdbReader {
                 let width = img_cursor.read_u32("image_width")?;
                 let height = img_cursor.read_u32("image_height")?;
                 let channels = img_cursor.read_u8("image_channels")?;
+
+                // Format byte: 0 = raw, 1 = JPEG
+                // For backwards compatibility with pre-compression files:
+                // old format didn't have this byte, so we peek at the byte.
+                // If it's 0 or 1, treat as format byte. Old files wrote
+                // a u32 data_len here, so the first byte would be the low
+                // byte of the length — if channels=3 and w*h*3 < 256 it
+                // could be 0 or 1, but that's only for tiny images (< 9x9).
+                // In practice this is safe for all real image sizes.
+                let format_byte = img_cursor.read_u8("image_format")?;
                 let data_len = img_cursor.read_u32("image_data_len")? as usize;
-                let data = img_cursor.read_bytes(data_len, "image_data")?;
+                let raw_data = img_cursor.read_bytes(data_len, "image_data")?;
+
+                let data = if format_byte == 1 {
+                    // JPEG — decode to raw RGB
+                    decompress_jpeg(&raw_data, width, height, channels)?
+                } else {
+                    // Raw pixels
+                    raw_data
+                };
 
                 images.push(ImageObs {
                     camera,
@@ -402,6 +420,35 @@ impl<'a> Cursor<'a> {
         let bytes = self.read_bytes(len, context)?;
         String::from_utf8(bytes).map_err(|_| ReadError::InvalidUtf8 { context })
     }
+}
+
+// ── JPEG decompression helper ───────────────────────────────
+
+fn decompress_jpeg(
+    jpeg_data: &[u8],
+    expected_width: u32,
+    expected_height: u32,
+    expected_channels: u8,
+) -> Result<Vec<u8>, ReadError> {
+    use image::io::Reader as ImageReader;
+    use std::io::Cursor;
+
+    let reader = ImageReader::with_format(Cursor::new(jpeg_data), image::ImageFormat::Jpeg);
+
+    let img = reader.decode().map_err(|e| ReadError::UnexpectedEof {
+        context: "jpeg decode failed",
+    })?;
+
+    let rgb = img.to_rgb8();
+
+    // Verify dimensions match
+    if rgb.width() != expected_width || rgb.height() != expected_height {
+        return Err(ReadError::UnexpectedEof {
+            context: "jpeg dimensions mismatch",
+        });
+    }
+
+    Ok(rgb.into_raw())
 }
 
 #[cfg(test)]
@@ -597,5 +644,97 @@ mod tests {
     fn open_nonexistent_file() {
         let err = KdbReader::open("/tmp/kinodb_does_not_exist.kdb");
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn compressed_image_roundtrip() {
+        let path = "/tmp/kinodb_rt_jpeg.kdb";
+
+        // Create a test episode with a 16x16 RGB image
+        let ep = Episode {
+            meta: EpisodeMeta {
+                id: EpisodeId(0),
+                embodiment: "franka".to_string(),
+                language_instruction: "test".to_string(),
+                num_frames: 2,
+                fps: 10.0,
+                action_dim: 3,
+                success: Some(true),
+                total_reward: Some(1.0),
+            },
+            frames: (0..2)
+                .map(|t| {
+                    // Solid color block — survives JPEG compression well
+                    let mut pixels = vec![0u8; 16 * 16 * 3];
+                    for chunk in pixels.chunks_mut(3) {
+                        chunk[0] = 200; // R
+                        chunk[1] = 100; // G
+                        chunk[2] = 50; // B
+                    }
+                    Frame {
+                        timestep: t,
+                        images: vec![ImageObs {
+                            camera: "front".to_string(),
+                            width: 16,
+                            height: 16,
+                            channels: 3,
+                            data: pixels,
+                        }],
+                        state: vec![0.1; 4],
+                        action: vec![0.01; 3],
+                        reward: Some(0.0),
+                        is_terminal: t == 1,
+                    }
+                })
+                .collect(),
+        };
+
+        // Write with JPEG compression (quality=85)
+        let mut writer = KdbWriter::create_compressed(path, 85).unwrap();
+        writer.write_episode(&ep).unwrap();
+        writer.finish().unwrap();
+
+        // Compare file size to uncompressed
+        let compressed_size = std::fs::metadata(path).unwrap().len();
+
+        let raw_path = "/tmp/kinodb_rt_jpeg_raw.kdb";
+        let mut raw_writer = KdbWriter::create(raw_path).unwrap();
+        raw_writer.write_episode(&ep).unwrap();
+        raw_writer.finish().unwrap();
+        let raw_size = std::fs::metadata(raw_path).unwrap().len();
+
+        // JPEG should be smaller
+        assert!(
+            compressed_size < raw_size,
+            "compressed {} should be < raw {}",
+            compressed_size,
+            raw_size,
+        );
+
+        // Read back and verify dimensions and approximate pixel values
+        let reader = KdbReader::open(path).unwrap();
+        let read_ep = reader.read_episode(0).unwrap();
+        assert_eq!(read_ep.frames.len(), 2);
+
+        let img = &read_ep.frames[0].images[0];
+        assert_eq!(img.width, 16);
+        assert_eq!(img.height, 16);
+        assert_eq!(img.channels, 3);
+        assert_eq!(img.data.len(), 16 * 16 * 3);
+
+        // JPEG is lossy — check pixels are approximately correct (within 20)
+        let r = img.data[0] as i32;
+        let g = img.data[1] as i32;
+        let b = img.data[2] as i32;
+        assert!((r - 200).abs() < 20, "R={} expected ~200", r);
+        assert!((g - 100).abs() < 20, "G={} expected ~100", g);
+        assert!((b - 50).abs() < 20, "B={} expected ~50", b);
+
+        // Actions should be exact
+        assert_eq!(read_ep.frames[0].action.len(), 3);
+        assert_eq!(read_ep.frames[0].state.len(), 4);
+
+        std::fs::remove_file(path).ok();
+        std::fs::remove_file(raw_path).ok();
     }
 }

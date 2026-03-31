@@ -12,3 +12,4 @@ ndarray = "0.15"
 parquet = "54"
 arrow = { version = "54", features = ["json"] }
 serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }

@@ -1,5 +1,6 @@
 use kinodb_ingest::hdf5::{self, Hdf5IngestConfig};
 use kinodb_ingest::lerobot::{self, LeRobotIngestConfig};
+use kinodb_ingest::rlds::{self, RldsIngestConfig};
 
 pub fn run(
     src: &str,
@@ -13,8 +14,12 @@ pub fn run(
     match format {
         "hdf5" => run_hdf5(src, output, embodiment, task, fps, max_episodes),
         "lerobot" => run_lerobot(src, output, embodiment, task, max_episodes),
+        "rlds" | "tfrecord" => run_rlds(src, output, embodiment, task, fps, max_episodes),
         other => {
-            eprintln!("Unsupported format: '{}'. Supported: hdf5, lerobot", other);
+            eprintln!(
+                "Unsupported format: '{}'. Supported: hdf5, lerobot, rlds",
+                other
+            );
             std::process::exit(1);
         }
     }
@@ -101,6 +106,46 @@ fn run_lerobot(
     println!("Try:");
     println!("  kino info {}", output);
     println!("  kino schema {}", output);
+
+    Ok(())
+}
+
+fn run_rlds(
+    src: &str,
+    output: &str,
+    embodiment: &str,
+    task: Option<&str>,
+    fps: f32,
+    max_episodes: Option<usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Ingesting RLDS (TFRecord): {}", src);
+    println!("  Output: {}", output);
+    println!("  Embodiment: {}", embodiment);
+    if let Some(t) = task {
+        println!("  Task: {}", t);
+    }
+    println!("  FPS: {}", fps);
+    if let Some(max) = max_episodes {
+        println!("  Max episodes: {}", max);
+    }
+    println!();
+
+    let config = RldsIngestConfig {
+        embodiment: embodiment.to_string(),
+        task: task.map(|s| s.to_string()),
+        fps,
+        max_episodes,
+    };
+
+    let result = rlds::ingest_rlds(src, output, &config)?;
+
+    println!(
+        "Done! Wrote {} episodes ({} frames) to {}",
+        result.num_episodes, result.total_frames, result.output_path
+    );
+    println!();
+    println!("Try:");
+    println!("  kino info {}", output);
 
     Ok(())
 }

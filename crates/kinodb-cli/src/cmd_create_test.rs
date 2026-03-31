@@ -5,16 +5,24 @@ pub fn run(
     num_episodes: u32,
     frames_per_episode: u32,
     with_images: bool,
+    compress: Option<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating test database: {}", path);
     println!(
-        "  {} episodes x {} frames{}",
+        "  {} episodes x {} frames{}{}",
         num_episodes,
         frames_per_episode,
-        if with_images { " (with 2 cameras)" } else { "" }
+        if with_images { " (with 2 cameras)" } else { "" },
+        match compress {
+            Some(q) => format!(" [JPEG quality={}]", q),
+            None => String::new(),
+        },
     );
 
-    let mut writer = KdbWriter::create(path)?;
+    let mut writer = match compress {
+        Some(q) => KdbWriter::create_compressed(path, q)?,
+        None => KdbWriter::create(path)?,
+    };
 
     let embodiments = ["widowx", "franka", "aloha", "ur5"];
     let tasks = [

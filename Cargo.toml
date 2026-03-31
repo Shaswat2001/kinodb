@@ -4,6 +4,7 @@ members = [
     "crates/kinodb-core",
     "crates/kinodb-ingest",
     "crates/kinodb-cli",
+    "crates/kinodb-serve",
 ]
 # kinodb-py is built separately via `maturin develop` (not cargo build)
 exclude = [

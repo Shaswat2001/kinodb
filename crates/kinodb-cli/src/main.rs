@@ -49,6 +49,10 @@ enum Commands {
         /// Include fake 64x64 camera images (makes file much larger).
         #[arg(long)]
         images: bool,
+
+        /// JPEG compress images (quality 1-100, recommended 85).
+        #[arg(long)]
+        compress: Option<u8>,
     },
 
     /// Ingest trajectory data from external formats into a .kdb file.
@@ -194,7 +198,8 @@ fn main() {
             num_episodes,
             frames,
             images,
-        } => cmd_create_test::run(&path, num_episodes, frames, images),
+            compress,
+        } => cmd_create_test::run(&path, num_episodes, frames, images, compress),
         Commands::Ingest {
             src,
             output,

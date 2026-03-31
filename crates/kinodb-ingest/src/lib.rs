@@ -11,3 +11,4 @@
 
 pub mod hdf5;
 pub mod lerobot;
+pub mod rlds;

@@ -1,0 +1,20 @@
+[package]
+name = "kinodb-serve"
+version = "0.1.0"
+edition = "2021"
+description = "gRPC batch server for kinodb — serves trajectory data at GPU-saturating speeds"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "kino-serve"
+path = "src/main.rs"
+
+[dependencies]
+kinodb-core = { path = "../kinodb-core" }
+tonic = "0.12"
+prost = "0.13"
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+
+[build-dependencies]
+tonic-build = "0.12"

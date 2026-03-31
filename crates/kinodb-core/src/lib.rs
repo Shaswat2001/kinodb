@@ -15,6 +15,7 @@ mod header;
 mod index;
 pub mod kql;
 mod mixture;
+pub mod prefetch;
 mod reader;
 mod types;
 mod writer;

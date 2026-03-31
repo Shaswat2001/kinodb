@@ -48,6 +48,8 @@ pub struct KdbWriter {
     /// Current byte position in the file (tracked manually so we
     /// don't need to call seek just to know where we are).
     pos: u64,
+    /// Image compression: None = raw pixels, Some(quality) = JPEG (1-100).
+    image_quality: Option<u8>,
 }
 
 /// Errors from the writer.
@@ -91,9 +93,25 @@ impl From<io::Error> for WriteError {
 impl KdbWriter {
     /// Create a new `.kdb` file at the given path.
     ///
-    /// Writes a placeholder header (64 zero bytes) that gets overwritten
-    /// when you call [`finish()`](KdbWriter::finish).
+    /// Images are stored as raw pixels. Use [`create_compressed`] for JPEG compression.
     pub fn create(path: impl AsRef<Path>) -> Result<Self, WriteError> {
+        Self::create_with_options(path, None)
+    }
+
+    /// Create a new `.kdb` file with JPEG image compression.
+    ///
+    /// `quality` is 1–100 (recommended: 85 for good quality, 50 for small size).
+    /// Images are JPEG-encoded on write and decoded back to raw pixels on read.
+    /// The API is transparent — callers always see raw RGB `ImageObs`.
+    pub fn create_compressed(path: impl AsRef<Path>, quality: u8) -> Result<Self, WriteError> {
+        let q = quality.clamp(1, 100);
+        Self::create_with_options(path, Some(q))
+    }
+
+    fn create_with_options(
+        path: impl AsRef<Path>,
+        image_quality: Option<u8>,
+    ) -> Result<Self, WriteError> {
         let file = File::create(path)?;
         let mut writer = BufWriter::new(file);
 
@@ -107,6 +125,7 @@ impl KdbWriter {
             total_frames: 0,
             next_id: 0,
             pos: HEADER_SIZE as u64,
+            image_quality,
         })
     }
 
@@ -162,9 +181,21 @@ impl KdbWriter {
                 self.write_u32(img.width)?;
                 self.write_u32(img.height)?;
                 self.write_u8(img.channels)?;
-                // Raw pixel data: length-prefixed
-                self.write_u32(img.data.len() as u32)?;
-                self.write_bytes(&img.data)?;
+
+                // Format byte: 0 = raw, 1 = JPEG
+                let (format_byte, encoded_data) = match self.image_quality {
+                    Some(quality) if img.channels == 3 && img.width > 0 && img.height > 0 => {
+                        match compress_jpeg(&img.data, img.width, img.height, quality) {
+                            Ok(jpeg_bytes) => (1u8, jpeg_bytes),
+                            Err(_) => (0u8, img.data.clone()), // fallback to raw
+                        }
+                    }
+                    _ => (0u8, img.data.clone()),
+                };
+
+                self.write_u8(format_byte)?;
+                self.write_u32(encoded_data.len() as u32)?;
+                self.write_bytes(&encoded_data)?;
             }
         }
         let images_length = self.pos - images_offset;
@@ -300,6 +331,41 @@ impl KdbWriter {
 
         buf
     }
+}
+
+// ── JPEG compression helper ─────────────────────────────────
+
+/// Compress raw RGB pixels to JPEG bytes.
+fn compress_jpeg(
+    raw_rgb: &[u8],
+    width: u32,
+    height: u32,
+    quality: u8,
+) -> Result<Vec<u8>, WriteError> {
+    use image::codecs::jpeg::JpegEncoder;
+    use std::io::Cursor;
+
+    let expected = (width as usize) * (height as usize) * 3;
+    if raw_rgb.len() != expected {
+        return Err(WriteError::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "image data len {} != {}x{}x3={}",
+                raw_rgb.len(),
+                width,
+                height,
+                expected,
+            ),
+        )));
+    }
+
+    let mut buf = Cursor::new(Vec::with_capacity(expected / 4));
+    let mut encoder = JpegEncoder::new_with_quality(&mut buf, quality);
+    encoder
+        .encode(raw_rgb, width, height, image::ExtendedColorType::Rgb8)
+        .map_err(|e| WriteError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+
+    Ok(buf.into_inner())
 }
 
 #[cfg(test)]
