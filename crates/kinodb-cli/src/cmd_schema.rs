@@ -10,12 +10,19 @@ pub fn run(kdb_path: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     // ── File-level info ─────────────────────────────────────
     println!("Format");
-    println!("  version:    {}.{}", header.version_major, header.version_minor);
+    println!(
+        "  version:    {}.{}",
+        header.version_major, header.version_minor
+    );
     println!("  episodes:   {}", header.num_episodes);
     println!("  frames:     {}", header.num_frames);
 
     let file_size = std::fs::metadata(kdb_path)?.len();
-    println!("  file_size:  {} ({} bytes)", format_bytes(file_size), file_size);
+    println!(
+        "  file_size:  {} ({} bytes)",
+        format_bytes(file_size),
+        file_size
+    );
     println!("  index_at:   byte {}", header.index_offset);
     println!("  index_size: {} bytes", header.index_length);
     println!();
@@ -82,8 +89,11 @@ pub fn run(kdb_path: &str) -> Result<(), Box<dyn std::error::Error>> {
             if let Some(f) = ep.frames.first() {
                 state_dims.insert(f.state.len());
                 for img in &f.images {
-                    cameras.entry(img.camera.clone())
-                        .or_insert((img.width, img.height, img.channels));
+                    cameras.entry(img.camera.clone()).or_insert((
+                        img.width,
+                        img.height,
+                        img.channels,
+                    ));
                 }
             }
         }
@@ -94,8 +104,14 @@ pub fn run(kdb_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("  embodiment:           {:?}", set_summary(&embodiments));
     println!("  language_instruction: {} unique values", tasks.len());
     println!("  fps:                  {:?}", set_summary(&fps_values));
-    println!("  success:              {}", if has_success { "present" } else { "absent" });
-    println!("  total_reward:         {}", if has_rewards { "present" } else { "absent" });
+    println!(
+        "  success:              {}",
+        if has_success { "present" } else { "absent" }
+    );
+    println!(
+        "  total_reward:         {}",
+        if has_rewards { "present" } else { "absent" }
+    );
     println!();
 
     // Frame length stats
@@ -108,7 +124,10 @@ pub fn run(kdb_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Frame Layout");
-    println!("  num_frames:  min={}, max={}, avg={:.1}", min_frames, max_frames, avg_frames);
+    println!(
+        "  num_frames:  min={}, max={}, avg={:.1}",
+        min_frames, max_frames, avg_frames
+    );
     println!("  action:      {} x f32", format_set_u16(&action_dims));
     println!("  state:       {} x f32", format_set_usize(&state_dims));
     println!("  reward:      f32 per frame");
@@ -121,7 +140,10 @@ pub fn run(kdb_path: &str) -> Result<(), Box<dyn std::error::Error>> {
             let bytes_per_frame = (*w as usize) * (*h as usize) * (*c as usize);
             println!(
                 "  {:<30} {}x{}x{} uint8 ({}/frame)",
-                name, h, w, c,
+                name,
+                h,
+                w,
+                c,
                 format_bytes(bytes_per_frame as u64),
             );
         }
@@ -156,11 +178,13 @@ pub fn run(kdb_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let entry = index.get(0).unwrap();
         println!("Byte Budget (episode 0)");
         println!("  meta:    {} bytes", entry.meta_length);
-        println!("  actions: {} ({}/frame)",
+        println!(
+            "  actions: {} ({}/frame)",
             format_bytes(entry.actions_length),
             format_bytes(entry.actions_length / entry.num_frames as u64),
         );
-        println!("  images:  {} ({}/frame)",
+        println!(
+            "  images:  {} ({}/frame)",
             format_bytes(entry.images_length),
             if entry.num_frames > 0 {
                 format_bytes(entry.images_length / entry.num_frames as u64)

@@ -1,4 +1,5 @@
 use kinodb_ingest::hdf5::{self, Hdf5IngestConfig};
+use kinodb_ingest::lerobot::{self, LeRobotIngestConfig};
 
 pub fn run(
     src: &str,
@@ -11,9 +12,9 @@ pub fn run(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         "hdf5" => run_hdf5(src, output, embodiment, task, fps, max_episodes),
+        "lerobot" => run_lerobot(src, output, embodiment, task, max_episodes),
         other => {
-            eprintln!("Unsupported format: '{}'. Supported: hdf5", other);
-            eprintln!("  lerobot and rlds formats are coming soon.");
+            eprintln!("Unsupported format: '{}'. Supported: hdf5, lerobot", other);
             std::process::exit(1);
         }
     }
@@ -55,6 +56,51 @@ fn run_hdf5(
     println!();
     println!("Try:");
     println!("  kino info {}", output);
+
+    Ok(())
+}
+
+fn run_lerobot(
+    src: &str,
+    output: &str,
+    embodiment: &str,
+    task: Option<&str>,
+    max_episodes: Option<usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Ingesting LeRobot dataset: {}", src);
+    println!("  Output: {}", output);
+    if embodiment != "unknown" {
+        println!("  Embodiment: {}", embodiment);
+    }
+    if let Some(t) = task {
+        println!("  Task: {}", t);
+    }
+    if let Some(max) = max_episodes {
+        println!("  Max episodes: {}", max);
+    }
+    println!("  Note: video frames not yet imported (actions + states only)");
+    println!();
+
+    let config = LeRobotIngestConfig {
+        embodiment: if embodiment == "unknown" {
+            None
+        } else {
+            Some(embodiment.to_string())
+        },
+        task: task.map(|s| s.to_string()),
+        max_episodes,
+    };
+
+    let result = lerobot::ingest_lerobot(src, output, &config)?;
+
+    println!(
+        "Done! Wrote {} episodes ({} frames) to {}",
+        result.num_episodes, result.total_frames, result.output_path
+    );
+    println!();
+    println!("Try:");
+    println!("  kino info {}", output);
+    println!("  kino schema {}", output);
 
     Ok(())
 }

@@ -21,3 +21,4 @@ target
 #.idea/
 
 *.kdb
+.DS_Store

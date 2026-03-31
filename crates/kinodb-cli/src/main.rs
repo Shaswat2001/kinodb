@@ -9,6 +9,8 @@ mod cmd_mix;
 mod cmd_query;
 mod cmd_bench;
 mod cmd_schema;
+mod cmd_validate;
+mod cmd_merge;
 
 /// kinodb — a high-performance trajectory database for robot learning.
 #[derive(Parser)]
@@ -142,6 +144,31 @@ enum Commands {
         /// Path to the .kdb file.
         path: String,
     },
+
+    /// Validate a .kdb file for corruption and consistency issues.
+    Validate {
+        /// Path to the .kdb file.
+        path: String,
+
+        /// Show all warnings and errors (not just first 10).
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Merge multiple .kdb files into one. Optionally filter with KQL.
+    Merge {
+        /// Input .kdb files to merge.
+        #[arg(required = true)]
+        inputs: Vec<String>,
+
+        /// Output .kdb file path.
+        #[arg(short, long, default_value = "merged.kdb")]
+        output: String,
+
+        /// Optional KQL filter — only episodes matching the query are included.
+        #[arg(short = 'F', long)]
+        filter: Option<String>,
+    },
 }
 
 /// Parse "path:weight" string into (String, f64).
@@ -206,6 +233,12 @@ fn main() {
             images,
         } => cmd_bench::run(num_episodes, frames, images),
         Commands::Schema { path } => cmd_schema::run(&path),
+        Commands::Validate { path, verbose } => cmd_validate::run(&path, verbose),
+        Commands::Merge {
+            inputs,
+            output,
+            filter,
+        } => cmd_merge::run(&inputs, &output, filter.as_deref()),
     };
 
     if let Err(e) = result {
