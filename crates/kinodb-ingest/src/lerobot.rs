@@ -158,7 +158,7 @@ pub fn ingest_lerobot(
     let mut episodes_map: BTreeMap<i64, Vec<RowData>> = BTreeMap::new();
 
     for pq_path in &parquet_files {
-        read_parquet_into_episodes(pq_path, &mut episodes_map)?;
+        read_parquet_into_episodes(pq_path, &mut episodes_map, config.compress.is_some())?;
     }
 
     if episodes_map.is_empty() {
@@ -311,9 +311,15 @@ fn read_tasks(dataset_dir: &Path) -> Result<BTreeMap<i64, String>, LeRobotError>
 }
 
 /// Read a parquet file and group rows into the episodes map.
+///
+/// If `passthrough_compressed` is true, image bytes from the parquet are
+/// kept in their original encoded format instead of being decoded to raw
+/// RGB pixels. This is used when the writer will store them as JPEG
+/// anyway, avoiding a wasteful decode→re-encode round-trip.
 fn read_parquet_into_episodes(
     path: &Path,
     episodes: &mut BTreeMap<i64, Vec<RowData>>,
+    passthrough_compressed: bool,
 ) -> Result<(), LeRobotError> {
     let file = fs::File::open(path)?;
     let reader = parquet::arrow::arrow_reader::ParquetRecordBatchReader::try_new(file, 4096)?;
@@ -384,7 +390,7 @@ fn read_parquet_into_episodes(
             });
 
             // Extract images from struct columns
-            let images = extract_image_row(&batch, &image_cols, row);
+            let images = extract_image_row(&batch, &image_cols, row, passthrough_compressed);
 
             episodes
                 .entry(ep_idx)
@@ -474,10 +480,15 @@ fn extract_f32_row(
 /// Extract images from struct columns containing a "bytes" field.
 /// LeRobot stores images as struct<bytes: binary, path: string>.
 /// The bytes field contains JPEG or PNG encoded image data.
+///
+/// If `passthrough_compressed` is true, the original compressed bytes are
+/// kept as-is (only dimensions are read). This avoids a wasteful
+/// decode→re-encode round-trip when the writer will store them as JPEG anyway.
 fn extract_image_row(
     batch: &arrow::record_batch::RecordBatch,
     image_cols: &[(usize, String)],
     row: usize,
+    passthrough_compressed: bool,
 ) -> Vec<(String, Vec<u8>, u32, u32, u8)> {
     let mut images = Vec::new();
 
@@ -497,14 +508,20 @@ fn extract_image_row(
                 if let Some(bin_arr) = bytes_col.as_any().downcast_ref::<arrow::array::BinaryArray>() {
                     if !bin_arr.is_null(row) {
                         let img_bytes = bin_arr.value(row);
-                        // Decode image to get RGB pixels and dimensions
-                        if let Ok((rgb, w, h)) = decode_image_bytes(img_bytes) {
+                        let result = if passthrough_compressed {
+                            // Keep original JPEG/PNG bytes, just read dimensions
+                            image_dimensions(img_bytes).map(|(w, h)| (img_bytes.to_vec(), w, h))
+                        } else {
+                            // Decode to raw RGB pixels
+                            decode_image_bytes(img_bytes)
+                        };
+                        if let Ok((data, w, h)) = result {
                             let camera = col_name
                                 .replace("observation.", "")
                                 .replace("images.", "")
                                 .replace("image", "camera");
                             let camera = if camera.is_empty() { "camera".to_string() } else { camera };
-                            images.push((camera, rgb, w, h, 3u8));
+                            images.push((camera, data, w, h, 3u8));
                         }
                     }
                 }
@@ -512,13 +529,18 @@ fn extract_image_row(
                 if let Some(bin_arr) = bytes_col.as_any().downcast_ref::<arrow::array::LargeBinaryArray>() {
                     if !bin_arr.is_null(row) {
                         let img_bytes = bin_arr.value(row);
-                        if let Ok((rgb, w, h)) = decode_image_bytes(img_bytes) {
+                        let result = if passthrough_compressed {
+                            image_dimensions(img_bytes).map(|(w, h)| (img_bytes.to_vec(), w, h))
+                        } else {
+                            decode_image_bytes(img_bytes)
+                        };
+                        if let Ok((data, w, h)) = result {
                             let camera = col_name
                                 .replace("observation.", "")
                                 .replace("images.", "")
                                 .replace("image", "camera");
                             let camera = if camera.is_empty() { "camera".to_string() } else { camera };
-                            images.push((camera, rgb, w, h, 3u8));
+                            images.push((camera, data, w, h, 3u8));
                         }
                     }
                 }
@@ -545,6 +567,22 @@ fn decode_image_bytes(data: &[u8]) -> Result<(Vec<u8>, u32, u32), LeRobotError> 
     let rgb = img.to_rgb8();
     let (w, h) = (rgb.width(), rgb.height());
     Ok((rgb.into_raw(), w, h))
+}
+
+/// Get image dimensions without decoding pixels (for passthrough mode).
+fn image_dimensions(data: &[u8]) -> Result<(u32, u32), LeRobotError> {
+    use image::ImageReader;
+    use std::io::Cursor;
+
+    let reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| LeRobotError::Format(format!("image format: {}", e)))?;
+
+    let (w, h) = reader
+        .into_dimensions()
+        .map_err(|e| LeRobotError::Format(format!("image dimensions: {}", e)))?;
+
+    Ok((w, h))
 }
 
 /// Recursively find all .parquet files under a directory.

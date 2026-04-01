@@ -185,9 +185,17 @@ impl KdbWriter {
                 // Format byte: 0 = raw, 1 = JPEG
                 let (format_byte, encoded_data) = match self.image_quality {
                     Some(quality) if img.channels == 3 && img.width > 0 && img.height > 0 => {
-                        match compress_jpeg(&img.data, img.width, img.height, quality) {
-                            Ok(jpeg_bytes) => (1u8, jpeg_bytes),
-                            Err(_) => (0u8, img.data.clone()), // fallback to raw
+                        if is_jpeg(&img.data) {
+                            // Already JPEG — pass through without re-encoding.
+                            // Re-encoding a decoded JPEG at a lower quality barely
+                            // reduces size because the pixel data has already lost
+                            // high-frequency detail from the first compression.
+                            (1u8, img.data.clone())
+                        } else {
+                            match compress_jpeg(&img.data, img.width, img.height, quality) {
+                                Ok(jpeg_bytes) => (1u8, jpeg_bytes),
+                                Err(_) => (0u8, img.data.clone()), // fallback to raw
+                            }
                         }
                     }
                     _ => (0u8, img.data.clone()),
@@ -331,6 +339,13 @@ impl KdbWriter {
 
         buf
     }
+}
+
+// ── JPEG detection helper ────────────────────────────────────
+
+/// Check if the data is already JPEG-encoded (starts with FF D8 FF magic bytes).
+fn is_jpeg(data: &[u8]) -> bool {
+    data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
 }
 
 // ── JPEG compression helper ─────────────────────────────────
