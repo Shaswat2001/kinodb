@@ -182,14 +182,11 @@ impl KdbWriter {
                 self.write_u32(img.height)?;
                 self.write_u8(img.channels)?;
 
-                // Format byte: 0 = raw, 1 = JPEG
+                // Format byte: 0 = raw, 1 = compressed (JPEG/PNG)
                 let (format_byte, encoded_data) = match self.image_quality {
                     Some(quality) if img.channels == 3 && img.width > 0 && img.height > 0 => {
-                        if is_jpeg(&img.data) {
-                            // Already JPEG — pass through without re-encoding.
-                            // Re-encoding a decoded JPEG at a lower quality barely
-                            // reduces size because the pixel data has already lost
-                            // high-frequency detail from the first compression.
+                        if is_compressed_image(&img.data) {
+                            // Already compressed (JPEG or PNG) — pass through as-is.
                             (1u8, img.data.clone())
                         } else {
                             match compress_jpeg(&img.data, img.width, img.height, quality) {
@@ -198,7 +195,14 @@ impl KdbWriter {
                             }
                         }
                     }
-                    _ => (0u8, img.data.clone()),
+                    _ => {
+                        // No compression requested, but check if data is already compressed
+                        if is_compressed_image(&img.data) {
+                            (1u8, img.data.clone())
+                        } else {
+                            (0u8, img.data.clone())
+                        }
+                    }
                 };
 
                 self.write_u8(format_byte)?;
@@ -346,6 +350,15 @@ impl KdbWriter {
 /// Check if the data is already JPEG-encoded (starts with FF D8 FF magic bytes).
 fn is_jpeg(data: &[u8]) -> bool {
     data.len() >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF
+}
+
+fn is_png(data: &[u8]) -> bool {
+    data.len() >= 4 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+}
+
+/// Check if image data is already in a compressed format (JPEG or PNG).
+fn is_compressed_image(data: &[u8]) -> bool {
+    is_jpeg(data) || is_png(data)
 }
 
 // ── JPEG compression helper ─────────────────────────────────

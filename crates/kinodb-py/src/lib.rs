@@ -164,16 +164,17 @@ impl PyDatabase {
                     .collect();
 
                 for cam_name in &cameras {
-                    // Collect all frames for this camera into one contiguous buffer
-                    let mut found_dims = None;
                     let mut buf: Vec<u8> = Vec::new();
                     let mut valid_frames = 0usize;
+                    let mut frame_size = 0usize;
+                    let mut dims = (0u32, 0u32, 0u8);
 
                     for frame in &episode.frames {
                         for img in &frame.images {
                             if &img.camera == cam_name {
-                                if found_dims.is_none() {
-                                    found_dims = Some((img.height, img.width, img.channels));
+                                if valid_frames == 0 {
+                                    dims = (img.height, img.width, img.channels);
+                                    frame_size = img.data.len();
                                 }
                                 buf.extend_from_slice(&img.data);
                                 valid_frames += 1;
@@ -182,16 +183,20 @@ impl PyDatabase {
                         }
                     }
 
-                    if let Some((h, w, c)) = found_dims {
-                        if valid_frames > 0 {
-                            let expected = valid_frames * (h as usize) * (w as usize) * (c as usize);
-                            if buf.len() == expected {
-                                let flat = numpy::PyArray1::from_vec_bound(py, buf);
-                                let shape = [valid_frames, h as usize, w as usize, c as usize];
-                                let array = flat.reshape(shape)
-                                    .map_err(|e| PyValueError::new_err(format!("image reshape: {}", e)))?;
-                                images_dict.set_item(cam_name, array)?;
-                            }
+                    let (h, w, c) = dims;
+                    if valid_frames > 0 && frame_size > 0 && buf.len() == valid_frames * frame_size {
+                        // Infer actual H, W from the per-frame data size
+                        let channels = if c > 0 { c as usize } else { 3 };
+                        let pixels = frame_size / channels;
+                        let actual_h = if h > 0 { h as usize } else { (pixels as f64).sqrt() as usize };
+                        let actual_w = if w > 0 { w as usize } else { pixels / actual_h };
+
+                        if actual_h * actual_w * channels == frame_size {
+                            let flat = numpy::PyArray1::from_vec_bound(py, buf);
+                            let shape = [valid_frames, actual_h, actual_w, channels];
+                            let array = flat.reshape(shape)
+                                .map_err(|e| PyValueError::new_err(format!("image reshape: {}", e)))?;
+                            images_dict.set_item(cam_name, array)?;
                         }
                     }
                 }
