@@ -34,7 +34,9 @@ use std::path::{Path, PathBuf};
 
 use arrow::array::Array;
 
-use kinodb_core::{Episode, EpisodeId, EpisodeMeta, Frame, KdbWriter};
+use kinodb_core::{
+    Episode, EpisodeId, EpisodeMeta, Frame, KdbWriter,
+};
 
 /// Configuration for LeRobot ingestion.
 #[derive(Debug, Clone)]
@@ -45,6 +47,8 @@ pub struct LeRobotIngestConfig {
     pub task: Option<String>,
     /// Max episodes to ingest.
     pub max_episodes: Option<usize>,
+    /// JPEG compress images (quality 1-100). None = raw pixels.
+    pub compress: Option<u8>,
 }
 
 impl Default for LeRobotIngestConfig {
@@ -53,6 +57,7 @@ impl Default for LeRobotIngestConfig {
             embodiment: None,
             task: None,
             max_episodes: None,
+            compress: None,
         }
     }
 }
@@ -85,31 +90,11 @@ impl std::fmt::Display for LeRobotError {
 
 impl std::error::Error for LeRobotError {}
 
-impl From<std::io::Error> for LeRobotError {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-impl From<kinodb_core::WriteError> for LeRobotError {
-    fn from(e: kinodb_core::WriteError) -> Self {
-        Self::Write(e)
-    }
-}
-impl From<parquet::errors::ParquetError> for LeRobotError {
-    fn from(e: parquet::errors::ParquetError) -> Self {
-        Self::Parquet(e)
-    }
-}
-impl From<arrow::error::ArrowError> for LeRobotError {
-    fn from(e: arrow::error::ArrowError) -> Self {
-        Self::Arrow(e)
-    }
-}
-impl From<serde_json::Error> for LeRobotError {
-    fn from(e: serde_json::Error) -> Self {
-        Self::Json(e)
-    }
-}
+impl From<std::io::Error> for LeRobotError { fn from(e: std::io::Error) -> Self { Self::Io(e) } }
+impl From<kinodb_core::WriteError> for LeRobotError { fn from(e: kinodb_core::WriteError) -> Self { Self::Write(e) } }
+impl From<parquet::errors::ParquetError> for LeRobotError { fn from(e: parquet::errors::ParquetError) -> Self { Self::Parquet(e) } }
+impl From<arrow::error::ArrowError> for LeRobotError { fn from(e: arrow::error::ArrowError) -> Self { Self::Arrow(e) } }
+impl From<serde_json::Error> for LeRobotError { fn from(e: serde_json::Error) -> Self { Self::Json(e) } }
 
 pub struct IngestResult {
     pub num_episodes: usize,
@@ -137,16 +122,15 @@ pub fn ingest_lerobot(
     let info_str = fs::read_to_string(&info_path)?;
     let info: serde_json::Value = serde_json::from_str(&info_str)?;
 
-    let fps = info.get("fps").and_then(|v| v.as_f64()).unwrap_or(30.0) as f32;
+    let fps = info.get("fps")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(30.0) as f32;
 
-    let robot_type = info
-        .get("robot_type")
+    let robot_type = info.get("robot_type")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    let embodiment = config
-        .embodiment
-        .clone()
+    let embodiment = config.embodiment.clone()
         .unwrap_or_else(|| robot_type.to_string());
 
     // ── Read tasks ──────────────────────────────────────────
@@ -166,7 +150,7 @@ pub fn ingest_lerobot(
 
     if parquet_files.is_empty() {
         return Err(LeRobotError::Missing(
-            "no parquet files found in data/".to_string(),
+            "no parquet files found in data/".to_string()
         ));
     }
 
@@ -179,7 +163,7 @@ pub fn ingest_lerobot(
 
     if episodes_map.is_empty() {
         return Err(LeRobotError::Format(
-            "no episode data found in parquet files".to_string(),
+            "no episode data found in parquet files".to_string()
         ));
     }
 
@@ -191,7 +175,10 @@ pub fn ingest_lerobot(
     };
 
     // ── Write to .kdb ───────────────────────────────────────
-    let mut writer = KdbWriter::create(output_path)?;
+    let mut writer = match config.compress {
+        Some(q) => KdbWriter::create_compressed(output_path, q)?,
+        None => KdbWriter::create(output_path)?,
+    };
     let mut total_frames: u64 = 0;
 
     for (write_idx, &ep_idx) in episode_indices.iter().take(n_episodes).enumerate() {
@@ -222,13 +209,25 @@ pub fn ingest_lerobot(
         let frames: Vec<Frame> = rows
             .iter()
             .enumerate()
-            .map(|(t, row)| Frame {
-                timestep: t as u32,
-                images: vec![], // video decoding not yet implemented
-                state: row.state.clone(),
-                action: row.action.clone(),
-                reward: None,
-                is_terminal: t == rows.len() - 1,
+            .map(|(t, row)| {
+                let images = row.images.iter().map(|(cam, data, w, h, c)| {
+                    kinodb_core::ImageObs {
+                        camera: cam.clone(),
+                        width: *w,
+                        height: *h,
+                        channels: *c,
+                        data: data.clone(),
+                    }
+                }).collect();
+
+                Frame {
+                    timestep: t as u32,
+                    images,
+                    state: row.state.clone(),
+                    action: row.action.clone(),
+                    reward: None,
+                    is_terminal: t == rows.len() - 1,
+                }
             })
             .collect();
 
@@ -251,6 +250,8 @@ struct RowData {
     action: Vec<f32>,
     state: Vec<f32>,
     task_index: Option<i64>,
+    /// (camera_name, raw_rgb_bytes, width, height, channels)
+    images: Vec<(String, Vec<u8>, u32, u32, u8)>,
 }
 
 /// Read tasks from tasks.jsonl (v2) or tasks.parquet (v3).
@@ -263,9 +264,7 @@ fn read_tasks(dataset_dir: &Path) -> Result<BTreeMap<i64, String>, LeRobotError>
         let content = fs::read_to_string(&jsonl_path)?;
         for line in content.lines() {
             let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
+            if line.is_empty() { continue; }
             if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
                 let idx = val.get("task_index").and_then(|v| v.as_i64()).unwrap_or(-1);
                 let desc = val.get("task").and_then(|v| v.as_str()).unwrap_or("");
@@ -290,12 +289,10 @@ fn read_tasks(dataset_dir: &Path) -> Result<BTreeMap<i64, String>, LeRobotError>
             let task_col = schema.index_of("task").ok();
 
             if let (Some(ic), Some(tc)) = (idx_col, task_col) {
-                let indices = batch
-                    .column(ic)
+                let indices = batch.column(ic)
                     .as_any()
                     .downcast_ref::<arrow::array::Int64Array>();
-                let descriptions = batch
-                    .column(tc)
+                let descriptions = batch.column(tc)
                     .as_any()
                     .downcast_ref::<arrow::array::StringArray>();
 
@@ -327,23 +324,27 @@ fn read_parquet_into_episodes(
         let num_rows = batch.num_rows();
 
         // Find episode_index column
-        let ep_col_idx = schema.index_of("episode_index").map_err(|_| {
-            LeRobotError::Format(format!("no 'episode_index' column in {}", path.display()))
-        })?;
+        let ep_col_idx = schema.index_of("episode_index")
+            .map_err(|_| LeRobotError::Format(
+                format!("no 'episode_index' column in {}", path.display())
+            ))?;
 
-        let ep_indices = batch
-            .column(ep_col_idx)
+        let ep_indices = batch.column(ep_col_idx)
             .as_any()
             .downcast_ref::<arrow::array::Int64Array>()
-            .ok_or_else(|| LeRobotError::Format("episode_index column is not Int64".to_string()))?;
+            .ok_or_else(|| LeRobotError::Format(
+                "episode_index column is not Int64".to_string()
+            ))?;
 
         // Find task_index column (optional)
         let task_col_idx = schema.index_of("task_index").ok();
 
         // Discover action columns: anything starting with "action"
-        // and state columns: anything starting with "observation.state"
+        // state columns: anything starting with "observation.state"
+        // image columns: anything starting with "observation.image" (struct with bytes field)
         let mut action_cols: Vec<(usize, String)> = Vec::new();
         let mut state_cols: Vec<(usize, String)> = Vec::new();
+        let mut image_cols: Vec<(usize, String)> = Vec::new();
 
         for (i, field) in schema.fields().iter().enumerate() {
             let name = field.name();
@@ -351,10 +352,18 @@ fn read_parquet_into_episodes(
                 action_cols.push((i, name.clone()));
             } else if name == "observation.state" || name.starts_with("observation.state.") {
                 state_cols.push((i, name.clone()));
+            } else if name.contains("image") && !name.contains("state") {
+                // Check if it's a struct column with a "bytes" field (LeRobot image format)
+                if let arrow::datatypes::DataType::Struct(fields) = field.data_type() {
+                    if fields.iter().any(|f| f.name() == "bytes") {
+                        image_cols.push((i, name.clone()));
+                    }
+                }
             }
         }
         action_cols.sort_by(|a, b| a.1.cmp(&b.1));
         state_cols.sort_by(|a, b| a.1.cmp(&b.1));
+        image_cols.sort_by(|a, b| a.1.cmp(&b.1));
 
         // Process each row
         for row in 0..num_rows {
@@ -368,12 +377,14 @@ fn read_parquet_into_episodes(
 
             // Task index
             let task_index = task_col_idx.and_then(|ci| {
-                batch
-                    .column(ci)
+                batch.column(ci)
                     .as_any()
                     .downcast_ref::<arrow::array::Int64Array>()
                     .map(|arr| arr.value(row))
             });
+
+            // Extract images from struct columns
+            let images = extract_image_row(&batch, &image_cols, row);
 
             episodes
                 .entry(ep_idx)
@@ -382,6 +393,7 @@ fn read_parquet_into_episodes(
                     action,
                     state,
                     task_index,
+                    images,
                 });
         }
     }
@@ -418,10 +430,7 @@ fn extract_f32_row(
         }
 
         // Try as FixedSizeListArray (e.g. action is a list of floats)
-        if let Some(list_arr) = col
-            .as_any()
-            .downcast_ref::<arrow::array::FixedSizeListArray>()
-        {
+        if let Some(list_arr) = col.as_any().downcast_ref::<arrow::array::FixedSizeListArray>() {
             let inner = list_arr.value(row);
             if let Some(f32_arr) = inner.as_any().downcast_ref::<arrow::array::Float32Array>() {
                 for i in 0..f32_arr.len() {
@@ -429,9 +438,7 @@ fn extract_f32_row(
                         values.push(f32_arr.value(i));
                     }
                 }
-            } else if let Some(f64_arr) =
-                inner.as_any().downcast_ref::<arrow::array::Float64Array>()
-            {
+            } else if let Some(f64_arr) = inner.as_any().downcast_ref::<arrow::array::Float64Array>() {
                 for i in 0..f64_arr.len() {
                     if !f64_arr.is_null(i) {
                         values.push(f64_arr.value(i) as f32);
@@ -450,9 +457,7 @@ fn extract_f32_row(
                         values.push(f32_arr.value(i));
                     }
                 }
-            } else if let Some(f64_arr) =
-                inner.as_any().downcast_ref::<arrow::array::Float64Array>()
-            {
+            } else if let Some(f64_arr) = inner.as_any().downcast_ref::<arrow::array::Float64Array>() {
                 for i in 0..f64_arr.len() {
                     if !f64_arr.is_null(i) {
                         values.push(f64_arr.value(i) as f32);
@@ -464,6 +469,82 @@ fn extract_f32_row(
     }
 
     values
+}
+
+/// Extract images from struct columns containing a "bytes" field.
+/// LeRobot stores images as struct<bytes: binary, path: string>.
+/// The bytes field contains JPEG or PNG encoded image data.
+fn extract_image_row(
+    batch: &arrow::record_batch::RecordBatch,
+    image_cols: &[(usize, String)],
+    row: usize,
+) -> Vec<(String, Vec<u8>, u32, u32, u8)> {
+    let mut images = Vec::new();
+
+    for (col_idx, col_name) in image_cols {
+        let col = batch.column(*col_idx);
+
+        // Try as StructArray
+        if let Some(struct_arr) = col.as_any().downcast_ref::<arrow::array::StructArray>() {
+            if struct_arr.is_null(row) {
+                continue;
+            }
+
+            // Find the "bytes" field within the struct
+            let bytes_idx = struct_arr.column_names().iter().position(|n| *n == "bytes");
+            if let Some(bi) = bytes_idx {
+                let bytes_col = struct_arr.column(bi);
+                if let Some(bin_arr) = bytes_col.as_any().downcast_ref::<arrow::array::BinaryArray>() {
+                    if !bin_arr.is_null(row) {
+                        let img_bytes = bin_arr.value(row);
+                        // Decode image to get RGB pixels and dimensions
+                        if let Ok((rgb, w, h)) = decode_image_bytes(img_bytes) {
+                            let camera = col_name
+                                .replace("observation.", "")
+                                .replace("images.", "")
+                                .replace("image", "camera");
+                            let camera = if camera.is_empty() { "camera".to_string() } else { camera };
+                            images.push((camera, rgb, w, h, 3u8));
+                        }
+                    }
+                }
+                // Also try LargeBinaryArray
+                if let Some(bin_arr) = bytes_col.as_any().downcast_ref::<arrow::array::LargeBinaryArray>() {
+                    if !bin_arr.is_null(row) {
+                        let img_bytes = bin_arr.value(row);
+                        if let Ok((rgb, w, h)) = decode_image_bytes(img_bytes) {
+                            let camera = col_name
+                                .replace("observation.", "")
+                                .replace("images.", "")
+                                .replace("image", "camera");
+                            let camera = if camera.is_empty() { "camera".to_string() } else { camera };
+                            images.push((camera, rgb, w, h, 3u8));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    images
+}
+
+/// Decode JPEG/PNG image bytes to raw RGB pixels.
+fn decode_image_bytes(data: &[u8]) -> Result<(Vec<u8>, u32, u32), LeRobotError> {
+    use image::ImageReader;
+    use std::io::Cursor;
+
+    let reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| LeRobotError::Format(format!("image format: {}", e)))?;
+
+    let img = reader
+        .decode()
+        .map_err(|e| LeRobotError::Format(format!("image decode: {}", e)))?;
+
+    let rgb = img.to_rgb8();
+    let (w, h) = (rgb.width(), rgb.height());
+    Ok((rgb.into_raw(), w, h))
 }
 
 /// Recursively find all .parquet files under a directory.

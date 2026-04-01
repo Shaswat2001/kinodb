@@ -14,13 +14,10 @@ pub fn run(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match format {
         "hdf5" => run_hdf5(src, output, embodiment, task, fps, max_episodes, compress),
-        "lerobot" => run_lerobot(src, output, embodiment, task, max_episodes),
+        "lerobot" => run_lerobot(src, output, embodiment, task, max_episodes, compress),
         "rlds" | "tfrecord" => run_rlds(src, output, embodiment, task, fps, max_episodes),
         other => {
-            eprintln!(
-                "Unsupported format: '{}'. Supported: hdf5, lerobot, rlds",
-                other
-            );
+            eprintln!("Unsupported format: '{}'. Supported: hdf5, lerobot, rlds", other);
             std::process::exit(1);
         }
     }
@@ -77,6 +74,7 @@ fn run_lerobot(
     embodiment: &str,
     task: Option<&str>,
     max_episodes: Option<usize>,
+    compress: Option<u8>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Ingesting LeRobot dataset: {}", src);
     println!("  Output: {}", output);
@@ -89,17 +87,16 @@ fn run_lerobot(
     if let Some(max) = max_episodes {
         println!("  Max episodes: {}", max);
     }
-    println!("  Note: video frames not yet imported (actions + states only)");
+    if let Some(q) = compress {
+        println!("  Compress: JPEG quality {}", q);
+    }
     println!();
 
     let config = LeRobotIngestConfig {
-        embodiment: if embodiment == "unknown" {
-            None
-        } else {
-            Some(embodiment.to_string())
-        },
+        embodiment: if embodiment == "unknown" { None } else { Some(embodiment.to_string()) },
         task: task.map(|s| s.to_string()),
         max_episodes,
+        compress,
     };
 
     let result = lerobot::ingest_lerobot(src, output, &config)?;
