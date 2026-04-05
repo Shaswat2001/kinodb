@@ -195,17 +195,13 @@ USAGE: kino <COMMAND>
 - [x] Core storage engine (`.kdb` format, reader, writer)
 - [x] HDF5 ingest (robomimic / LIBERO)
 - [x] CLI (`kino info`, `kino ingest`, `kino create-test`)
-- [ ] LeRobot v3 ingest
-- [ ] RLDS ingest (TFRecord parser, no TF dependency)
-- [ ] KQL query language (filter by embodiment, task, success)
-- [ ] `kino mix` — weighted dataset mixtures
-- [ ] gRPC batch serving
-- [ ] Shared memory serving (zero-copy)
-- [ ] PyTorch DataLoader (`pip install kinodb`)
-- [ ] `kino export` — write back to HDF5/LeRobot/NumPy
-- [ ] Video-aware image compression (H.264/H.265 segments)
-- [ ] Hardware-accelerated decode (NVDEC/VAAPI)
-
-## License
-
-MIT OR Apache-2.0
+- [x] LeRobot v3 ingest
+- [x] RLDS ingest (TFRecord parser, no TF dependency)
+- [x] KQL query language (filter by embodiment, task, success)
+- [x] `kino mix` — weighted dataset mixtures
+- [x] gRPC batch serving
+- [x] Shared memory serving (zero-copy)
+- [x] PyTorch DataLoader (`pip install kinodb`)
+- [x] `kino export` — write back to HDF5/LeRobot/NumPy
+- [x] Video-aware image compression (H.264/H.265 segments)
+- [x] Hardware-accelerated decode (NVDEC/VAAPI)
