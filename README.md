@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="#install">Install</a> •
+  <a href="#documentation">Documentation</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#why">Why?</a> •
   <a href="#architecture">Architecture</a> •
@@ -42,7 +43,19 @@ kinodb v0.1
   Success:   187/200 (93.5%)
 ```
 
-> **Status:** 🚧 Early development — the core storage engine and HDF5 ingest work. LeRobot/RLDS ingest, batch serving, and Python bindings are coming.
+> **Status:** 🚧 Early development — core storage, HDF5/LeRobot/RLDS ingest, KQL, mixtures, gRPC serving, and Python bindings are implemented, but APIs and packaging are still stabilizing.
+
+## Documentation
+
+The launch documentation lives in `kinodb-docs/` as an Astro Starlight site.
+
+```bash
+cd kinodb-docs
+npm install
+npm run dev
+```
+
+Open http://127.0.0.1:4321/kinodb/ for the local preview. The GitHub Pages workflow in `.github/workflows/docs.yml` builds and deploys the same site for free.
 
 ## Install
 

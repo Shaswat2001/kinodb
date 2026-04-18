@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="148" height="148" viewBox="0 0 148 148" role="img" aria-labelledby="title desc">
+  <title id="title">kinodb logo</title>
+  <desc id="desc">A stylized K mark with trajectory paths.</desc>
+  <defs>
+    <linearGradient id="mark" x1="24" y1="20" x2="126" y2="130" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0284C7"/>
+      <stop offset="0.48" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#DB2777"/>
+    </linearGradient>
+    <linearGradient id="trail" x1="23" y1="113" x2="130" y2="38" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0891B2"/>
+      <stop offset="0.55" stop-color="#7C3AED"/>
+      <stop offset="1" stop-color="#DB2777"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#1E293B" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+  <rect x="10" y="10" width="128" height="128" rx="26" fill="#FFFFFF" filter="url(#soft)"/>
+  <rect x="11.5" y="11.5" width="125" height="125" rx="24.5" fill="none" stroke="url(#mark)" stroke-opacity="0.42" stroke-width="3"/>
+  <path d="M42 111V37h18v30.8L89.8 37H112L78.5 72.8 115 111H91.5L60 77.7V111H42Z" fill="url(#mark)"/>
+  <path d="M27 105C45 88 60 83 76 84c17 1 31 8 46-8 6-6 9-13 10-22" fill="none" stroke="url(#trail)" stroke-width="5.5" stroke-linecap="round"/>
+  <path d="M31 47c17 13 33 18 48 15 16-3 25-14 40-30" fill="none" stroke="#4F46E5" stroke-width="3.5" stroke-linecap="round" opacity="0.42"/>
+  <circle cx="27" cy="105" r="4.8" fill="#0891B2"/>
+  <circle cx="76" cy="84" r="4.8" fill="#7C3AED"/>
+  <circle cx="132" cy="54" r="4.8" fill="#DB2777"/>
+</svg>

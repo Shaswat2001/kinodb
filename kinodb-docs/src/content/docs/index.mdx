@@ -1,0 +1,211 @@
+---
+title: kinodb
+description: The launch narrative, technical thesis, reading path, and benchmark results for kinodb.
+---
+
+<div class="kino-figma-hero">
+  <div class="kino-orb" aria-hidden="true"></div>
+  <div class="kino-emblem" aria-hidden="true">
+    <svg width="240" height="240" viewBox="0 0 240 240">
+      <defs>
+        <linearGradient id="kinoDbGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#60a5fa" />
+          <stop offset="100%" stop-color="#a78bfa" />
+        </linearGradient>
+        <linearGradient id="kinoPathGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#3b82f6" />
+          <stop offset="50%" stop-color="#8b5cf6" />
+          <stop offset="100%" stop-color="#ec4899" />
+        </linearGradient>
+        <filter id="kinoGlow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+          <feMerge>
+            <feMergeNode in="coloredBlur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <ellipse cx="120" cy="80" rx="70" ry="20" fill="url(#kinoDbGradient)" opacity="0.15" />
+      <ellipse cx="120" cy="80" rx="70" ry="20" fill="none" stroke="url(#kinoDbGradient)" stroke-width="2.5" />
+      <rect x="50" y="80" width="140" height="80" fill="rgba(100, 116, 139, 0.05)" />
+      <line x1="50" y1="80" x2="50" y2="160" stroke="url(#kinoDbGradient)" stroke-width="2.5" />
+      <line x1="190" y1="80" x2="190" y2="160" stroke="url(#kinoDbGradient)" stroke-width="2.5" />
+      <ellipse cx="120" cy="160" rx="70" ry="20" fill="rgba(100, 116, 139, 0.1)" />
+      <ellipse cx="120" cy="160" rx="70" ry="20" fill="none" stroke="url(#kinoDbGradient)" stroke-width="2.5" />
+      <path d="M 60 100 Q 80 85, 100 100 T 140 100 Q 155 100, 170 110" fill="none" stroke="url(#kinoPathGradient)" stroke-width="3" stroke-linecap="round" filter="url(#kinoGlow)" opacity="0.9">
+        <animate attributeName="stroke-dasharray" from="0 200" to="200 0" dur="3s" repeatCount="indefinite" />
+      </path>
+      <circle cx="60" cy="100" r="4" fill="#3b82f6">
+        <animate attributeName="r" values="4;5;4" dur="2s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="100" cy="100" r="3.5" fill="#8b5cf6" />
+      <circle cx="140" cy="100" r="3.5" fill="#a855f7" />
+      <circle cx="170" cy="110" r="4.5" fill="#ec4899">
+        <animate attributeName="r" values="4.5;6;4.5" dur="2s" repeatCount="indefinite" />
+      </circle>
+      <g transform="translate(185, 105)">
+        <circle cx="0" cy="0" r="12" fill="none" stroke="#ec4899" stroke-width="2" opacity="0.3">
+          <animate attributeName="r" values="12;20;12" dur="2s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.3;0;0.3" dur="2s" repeatCount="indefinite" />
+        </circle>
+      </g>
+      <rect x="60" y="120" width="35" height="4" rx="2" fill="#3b82f6" opacity="0.3" />
+      <rect x="100" y="125" width="45" height="4" rx="2" fill="#8b5cf6" opacity="0.3" />
+      <rect x="70" y="135" width="50" height="4" rx="2" fill="#a855f7" opacity="0.3" />
+      <rect x="125" y="130" width="40" height="4" rx="2" fill="#ec4899" opacity="0.3" />
+    </svg>
+  </div>
+  <div class="kino-brand-text">
+    <div class="kino-wordmark" aria-label="kinodb"><span>kino</span><strong>db</strong></div>
+    <p class="kino-subtitle">Robot Trajectory Database</p>
+    <p class="kino-tagline">High-performance trajectory data pipeline from HDF5 to GPU-saturating training batches.</p>
+    <div class="kino-chips" aria-label="Supported source formats">
+      <span>robomimic</span>
+      <span>LIBERO</span>
+      <span>DROID</span>
+      <strong>.kdb format</strong>
+    </div>
+  </div>
+</div>
+
+## The Problem
+
+Robot learning has a data layer problem. The models are becoming general, but
+datasets are still trapped in incompatible storage formats, slow Python loaders,
+memory-heavy conversions, and benchmark scripts that quietly encode schema
+assumptions.
+
+Every serious robot learning stack eventually becomes a data systems project.
+HDF5 stores robomimic and LIBERO trajectories. LeRobot uses Parquet plus media
+files. RLDS and Open X-Embodiment use TFRecord and TensorFlow conventions. Labs
+add Zarr, raw folders, sidecar metadata, and custom loaders because none of the
+existing formats is the shared trajectory database robotics actually wants.
+
+The failure mode is not cosmetic. It shows up as training stalls, out-of-memory
+loads, duplicated conversions, format drift, collection bottlenecks, and correctness
+bugs that only appear after someone tries to mix datasets.
+
+| Signal | What it exposed | Why it matters |
+| --- | --- | --- |
+| LeRobot issue #1623 | Training spending more time in the dataloader than backprop | The data path can dominate wall-clock training |
+| LeRobot issue #1346 | Whole-dataset memory pressure and image-heavy fine-tuning | "Load everything into RAM" is not a robotics-scale plan |
+| LeRobot issue #2446 | Many LIBERO variants across format versions | Format drift creates duplicated datasets and brittle loaders |
+| LeRobot issue #1434 | Recording-time video encoding bottlenecks | Storage choices affect data collection, not only training |
+| Robo-DM, ICRA 2025 | RLDS bloat and slower loading than optimized paths | Robotics data overhead is measurable systems debt |
+| RLDS / OXE practice | TensorFlow dependency and underdocumented conventions | PyTorch-heavy labs pay an integration tax |
+
+## The Thesis
+
+kinodb turns trajectory data into an embedded database. Ingest once, write one
+indexed `.kdb` file, and then query, validate, mix, serve, and train through the
+same API regardless of whether the source came from HDF5, LeRobot, or RLDS.
+
+<ol class="kino-flow">
+  <li>
+    <strong>Ingest</strong>
+    <span>Convert HDF5, LeRobot Parquet, and RLDS TFRecord into one episode-first format.</span>
+  </li>
+  <li>
+    <strong>Index</strong>
+    <span>Store contiguous episode payloads plus an end-of-file index for direct random access.</span>
+  </li>
+  <li>
+    <strong>Query</strong>
+    <span>Filter metadata with KQL instead of hand-writing one-off Python dataset scans.</span>
+  </li>
+  <li>
+    <strong>Train</strong>
+    <span>Read from Python, NumPy, PyTorch datasets, weighted mixtures, or the gRPC server.</span>
+  </li>
+  <li>
+    <strong>Measure</strong>
+    <span>Validate exactness, storage size, metadata scans, random reads, and training throughput.</span>
+  </li>
+</ol>
+
+## Read This In Order
+
+The left sidebar is organized as a launch path. Start with the problem, build a
+database, train from it, then use the benchmark and reference sections when you
+need proof or implementation details.
+
+<div class="kino-doc-path">
+  <a href="/kinodb/guides/why-kinodb/">
+    <span>01</span>
+    <strong>Why kinodb?</strong>
+    <em>The technical motivation, public issue framing, and current scope.</em>
+  </a>
+  <a href="/kinodb/guides/installation/">
+    <span>02</span>
+    <strong>Installation</strong>
+    <em>Rust build, Python bindings, HDF5 setup, and known macOS notes.</em>
+  </a>
+  <a href="/kinodb/guides/quickstart/">
+    <span>03</span>
+    <strong>Quick Start</strong>
+    <em>Create a `.kdb`, inspect it, query it, and read it from Python.</em>
+  </a>
+  <a href="/kinodb/guides/ingestion/">
+    <span>04</span>
+    <strong>Ingesting Data</strong>
+    <em>Bring in robomimic, LIBERO, LeRobot, RLDS, and image-heavy datasets.</em>
+  </a>
+  <a href="/kinodb/guides/kql/">
+    <span>05</span>
+    <strong>KQL Queries</strong>
+    <em>Use metadata filters for selection, merge, and training subsets.</em>
+  </a>
+  <a href="/kinodb/benchmarks/io/">
+    <span>06</span>
+    <strong>Benchmark Results</strong>
+    <em>Read the launch numbers for correctness, I/O, storage, and training.</em>
+  </a>
+</div>
+
+## First Minute
+
+```bash
+cargo build --release
+
+# Create a small synthetic database.
+target/release/kino create-test demo.kdb -n 20 --frames 50 --compress 85
+
+# Inspect and query it.
+target/release/kino info demo.kdb
+target/release/kino schema demo.kdb
+target/release/kino query demo.kdb "success = true AND num_frames > 25"
+```
+
+```python
+import kinodb
+
+db = kinodb.open("demo.kdb")
+print(db.summary())
+
+episode = db.read_episode(0)
+print(episode["actions"].shape)
+print(episode["states"].shape)
+```
+
+## Launch Scorecard
+
+These are the results preserved from the benchmark history used to launch the
+project. The important part is not only that kinodb is faster, but that it gives
+robotics teams one data layer for formats that otherwise need separate loaders
+and scripts.
+
+| Area | Result |
+| --- | --- |
+| Correctness | 15/15 datasets matched exactly; `action_max_abs_diff = 0.0` after the benchmark sort bug was fixed |
+| Tabular datasets | Median 113x faster open, 9x sequential read, 8.6x random read, 375x metadata scan |
+| Tabular storage | Median 5.7x smaller, range 1.1-8.7x smaller |
+| Image datasets | 149-420x faster open, 3.3-20x random read, 605-2,648x metadata scan |
+| Image storage | 0.9-1.0x of native size with JPEG pass-through, meaning storage parity rather than raw RGB blow-up |
+| Training pipeline | Strong LeRobot wins: up to 590x load, 736x batch construction, 185x training-step, 261x inference in the recorded benchmark summary |
+
+## What Exists Today
+
+kinodb currently ships a Rust workspace with core storage, ingestion, CLI, gRPC serving, and Python bindings. Some original blueprint items, such as video-segment storage, shared-memory serving, and hardware decode, are future work. The docs mark those as roadmap items instead of pretending they are already implemented.
+
+The docs are written to keep that line clear: what exists today, what was measured,
+and what is still roadmap.
