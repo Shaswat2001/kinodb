@@ -1,53 +1,165 @@
 <p align="center">
-  <h1 align="center">kinodb</h1>
-  <p align="center"><em>from Greek <b>kínēsis</b> (motion) + <b>db</b> (database)</em></p>
-  <p align="center">A high-performance trajectory database for robot learning. Built in Rust.</p>
+  <img src="kinodb-docs/public/logo-dark.svg" width="170" alt="kinodb logo">
+</p>
+
+<h1 align="center">kinodb</h1>
+
+<p align="center">
+  <strong>Robot trajectory database for fast, queryable, cross-format training data.</strong>
 </p>
 
 <p align="center">
-  <a href="#install">Install</a> •
-  <a href="#documentation">Documentation</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#why">Why?</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#roadmap">Roadmap</a>
+  <a href="https://shaswat2001.github.io/kinodb/">Documentation</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#benchmarks">Benchmarks</a> ·
+  <a href="#why-kinodb">Why kinodb?</a> ·
+  <a href="#status">Status</a>
 </p>
 
 ---
 
-**kinodb** ingests robot trajectory data from HDF5 (robomimic, LIBERO, DROID), stores it in a compact binary format (`.kdb`), and will serve training batches at GPU-saturating speeds.
+kinodb turns robotics datasets into one indexed `.kdb` file. Ingest HDF5, LeRobot, or RLDS once, then query episodes with KQL, mix datasets by weight, validate data, and train through a single Rust/Python data path.
 
 ```bash
-# Ingest a robomimic/LIBERO HDF5 file
-kino ingest data.hdf5 --output data.kdb --embodiment franka --task "pick up the block"
+cargo build --release
 
-# Inspect the result
-kino info data.kdb
+# Create a small synthetic trajectory database.
+target/release/kino create-test demo.kdb -n 20 --frames 50 --compress 85
+
+# Inspect and query it.
+target/release/kino info demo.kdb
+target/release/kino schema demo.kdb
+target/release/kino query demo.kdb "success = true AND num_frames > 25"
 ```
 
+## Why kinodb?
+
+Robot learning has a data layer problem. Models are becoming general, but datasets are still split across HDF5, Parquet, TFRecord, raw folders, and lab-specific loaders. That fragmentation shows up as slow dataloaders, memory-heavy conversions, duplicated dataset variants, fragile benchmark scripts, and custom glue every time a team wants to mix data sources.
+
+kinodb is an episode-first database layer for that mess:
+
+| Need | kinodb answer |
+| --- | --- |
+| One data path | Convert HDF5, LeRobot, and RLDS into the same `.kdb` layout |
+| Fast random access | Memory-mapped reader plus end-of-file episode index |
+| Metadata filters | KQL queries like `success = true AND task CONTAINS 'drawer'` |
+| Dataset mixtures | Weighted sampling across many `.kdb` files |
+| Training bridge | Python bindings, NumPy arrays, PyTorch helpers, and gRPC serving |
+| Auditability | CLI schema, validation, benchmark, merge, query, and export commands |
+
+## Supported Formats
+
+| Source | Status | Notes |
+| --- | --- | --- |
+| robomimic / LIBERO HDF5 | Supported | Reads `data/demo_*` groups, actions, rewards, dones, observations, and camera images |
+| LeRobot Parquet | Supported | Handles v2/v3 metadata, tasks, action/state list columns, and image struct payloads |
+| RLDS / TFRecord | Supported | Manual TFRecord parser; no TensorFlow runtime dependency |
+| `.kdb` mixtures | Supported | Weighted sources through CLI, Rust, Python, and server paths |
+| gRPC serving | Supported | Remote batch serving for training workers |
+
+## Quick Start
+
+Build the CLI:
+
+```bash
+cargo build --release
+export PATH="$PWD/target/release:$PATH"
 ```
-kinodb v0.1
 
-  File:      data.kdb
-  Episodes:  200
-  Frames:    18400
-  Avg len:   92.0 frames/episode
-  File size: 1.2 MB
+Create and inspect a database:
 
-  Embodiments (1):
-    - franka
-
-  Tasks (1):
-    - pick up the block
-
-  Success:   187/200 (93.5%)
+```bash
+kino create-test demo.kdb -n 20 --frames 50
+kino info demo.kdb
+kino schema demo.kdb
+kino validate demo.kdb
 ```
 
-> **Status:** 🚧 Early development — core storage, HDF5/LeRobot/RLDS ingest, KQL, mixtures, gRPC serving, and Python bindings are implemented, but APIs and packaging are still stabilizing.
+Ingest real data:
+
+```bash
+# HDF5: robomimic, LIBERO, DROID-style files.
+kino ingest path/to/data.hdf5 \
+  --format hdf5 \
+  --output data.kdb \
+  --embodiment franka \
+  --task "open the drawer" \
+  --fps 20.0
+
+# LeRobot directory.
+kino ingest path/to/lerobot_dataset \
+  --format lerobot \
+  --output pusht.kdb \
+  --max-episodes 100
+
+# RLDS / TFRecord directory.
+kino ingest path/to/rlds_dataset \
+  --format rlds \
+  --output bridge.kdb \
+  --embodiment widowx
+```
+
+Read from Python after building the bindings:
+
+```bash
+cd crates/kinodb-py
+maturin develop --release
+cd ../..
+```
+
+```python
+import kinodb
+
+db = kinodb.open("demo.kdb")
+print(db.summary())
+
+episode = db.read_episode(0)
+print(episode["actions"].shape)
+print(episode["states"].shape)
+```
+
+## Benchmarks
+
+Latest launch experiment highlights:
+
+| Result | Number |
+| --- | ---: |
+| PushT image CNN/MLP training | 6.6-6.8x end-to-end |
+| LIBERO spatial CNN/MLP training | 7.1-7.7x end-to-end |
+| ViT training runs | 2.2-2.4x end-to-end |
+| 50K episode open time | 1.2ms |
+| 50K sequential read | 1.26s |
+| 50K KQL scan | 31.7ms |
+| Mixed-source loader code | 26 native LOC to 8 kinodb LOC |
+| State-only 1K episode storage | 4.52 MB |
+
+The speedup shrinks when model compute dominates the training step. That is expected: kinodb accelerates the data path, not the model math. Full benchmark tables live in the docs:
+
+- [Training Pipeline](https://shaswat2001.github.io/kinodb/benchmarks/training/)
+- [IO Performance](https://shaswat2001.github.io/kinodb/benchmarks/io/)
+- [Correctness](https://shaswat2001.github.io/kinodb/benchmarks/correctness/)
+
+## CLI
+
+```text
+kino <COMMAND>
+
+Commands:
+  create-test  Generate sample .kdb data
+  ingest       Import HDF5, LeRobot, or RLDS into .kdb
+  info         Show database summary
+  schema       Print file layout and episode schema
+  validate     Check consistency and corruption risks
+  query        Filter episodes with KQL
+  mix          Build weighted dataset mixtures
+  merge        Merge .kdb files, optionally with a KQL filter
+  export       Export to standard formats
+  bench        Run local synthetic benchmarks
+```
 
 ## Documentation
 
-The launch documentation lives in `kinodb-docs/` as an Astro Starlight site.
+The full documentation is an Astro Starlight site in [`kinodb-docs/`](kinodb-docs/).
 
 ```bash
 cd kinodb-docs
@@ -55,166 +167,66 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:4321/kinodb/ for the local preview. The GitHub Pages workflow in `.github/workflows/docs.yml` builds and deploys the same site for free.
+Local preview:
 
-## Install
-
-### Prerequisites
-
-- **Rust** (1.70+): https://rustup.rs
-- **CMake**: needed to build the bundled HDF5 C library
-
-```bash
-# macOS
-brew install cmake
-
-# Ubuntu/Debian
-sudo apt install cmake
+```text
+http://127.0.0.1:4321/kinodb/
 ```
 
-### Build from source
+Public docs:
 
-```bash
-git clone https://github.com/YOUR_USERNAME/kinodb.git
-cd kinodb
-cargo build --release
+```text
+https://shaswat2001.github.io/kinodb/
 ```
-
-The binary is at `target/release/kino`.
-
-### Verify
-
-```bash
-cargo test
-```
-
-## Quick Start
-
-### Generate test data
-
-```bash
-# Create a sample .kdb with fake robot episodes
-kino create-test demo.kdb -n 20 --frames 50
-
-# With fake camera images
-kino create-test demo_images.kdb -n 10 --frames 30 --images
-```
-
-### Ingest real HDF5 data
-
-```bash
-# robomimic / LIBERO style HDF5 files
-kino ingest path/to/dataset.hdf5 \
-  --output dataset.kdb \
-  --embodiment franka \
-  --task "open the drawer" \
-  --fps 20.0
-
-# Only ingest the first 50 episodes
-kino ingest large_dataset.hdf5 --output small.kdb --max-episodes 50
-```
-
-### Inspect a database
-
-```bash
-# Summary
-kino info dataset.kdb
-
-# Per-episode table
-kino info --episodes dataset.kdb
-```
-
-## Why?
-
-Every team training VLAs (Vision-Language-Action models) hits the same data bottleneck:
-
-| Problem | Evidence |
-|---------|----------|
-| **Video decode is slower than backprop** | [LeRobot #1623](https://github.com/huggingface/lerobot/issues/1623): "Training SmolVLA spends more time waiting for the dataloader (1s) than running backprop (0.7s)" |
-| **Datasets don't fit in memory** | [LeRobot #1346](https://github.com/huggingface/lerobot/issues/1346): GR00T 1.5 fine-tuning needs 937 GB for images alone |
-| **Format fragmentation** | [LeRobot #2446](https://github.com/huggingface/lerobot/issues/2446): "Almost 600 variants of libero on the hub" |
-| **RLDS is bloated** | [Robo-DM (ICRA 2025)](https://autolab.berkeley.edu): RLDS is 18–73× larger per episode than necessary |
-
-**kinodb** solves this by being a purpose-built database engine:
-
-- **Format-agnostic ingest**: reads HDF5, RLDS, LeRobot — you never convert between formats again
-- **Compact storage**: binary columnar format with video-aware compression
-- **O(1) random access**: episode index with byte offsets — jump to any frame instantly
-- **Zero Python dependencies**: `cargo install kinodb` — no conda, no TensorFlow
-- **No lock-in**: export back to standard formats anytime
 
 ## Architecture
 
-### File format (`.kdb`)
+`.kdb` is an embedded binary trajectory format:
 
-```
-┌──────────────────────────┐  byte 0
-│  FileHeader (64 bytes)   │  magic "KINO", version, counts
-├──────────────────────────┤  byte 64
-│  Episode 0: meta blob    │  embodiment, task, fps, success
-│  Episode 0: actions      │  state + action vectors (packed f32)
-│  Episode 0: images       │  camera frames (raw RGB)
+```text
+┌──────────────────────────┐
+│ FileHeader               │  magic, version, episode count, frame count
 ├──────────────────────────┤
-│  Episode 1: ...          │
+│ Episode 0 metadata       │  task, embodiment, fps, success, reward
+│ Episode 0 actions/state  │  packed f32 arrays
+│ Episode 0 images         │  optional image payloads
 ├──────────────────────────┤
-│  ...                     │
-├──────────────────────────┤  ← header.index_offset
-│  Episode Index           │  N × 64-byte entries with byte offsets
+│ Episode 1 ...            │
+├──────────────────────────┤
+│ Episode Index            │  byte offsets and lengths for O(1) lookup
 └──────────────────────────┘
 ```
 
-### Crate structure
+Workspace layout:
 
-```
-kinodb/
-├── crates/
-│   ├── kinodb-core/       # Storage engine: types, header, index, reader, writer
-│   ├── kinodb-ingest/     # Format readers (HDF5, soon: LeRobot, RLDS)
-│   └── kinodb-cli/        # "kino" binary
-├── Cargo.toml             # Workspace root
-└── README.md
-```
-
-### Supported HDF5 structure
-
-kinodb auto-discovers the robomimic/LIBERO convention:
-
-```
-data/
-  demo_0/
-    actions             (N, action_dim) float32    ← required
-    rewards             (N,) float32               ← optional
-    dones               (N,) float32               ← optional
-    obs/
-      agentview_image   (N, H, W, 3) uint8         ← auto-detected as camera
-      robot0_eef_pos    (N, D) float32              ← auto-detected as state
-      robot0_gripper_qpos (N, D) float32            ← auto-detected as state
-  demo_1/
-    ...
+```text
+crates/
+  kinodb-core/    storage engine, reader, writer, KQL, mixtures
+  kinodb-ingest/  HDF5, LeRobot, and RLDS importers
+  kinodb-cli/     kino command-line interface
+  kinodb-serve/   gRPC serving layer
+  kinodb-py/      Python bindings, built separately with maturin
 ```
 
-## CLI Reference
+## Status
 
-```
-USAGE: kino <COMMAND>
+Implemented:
 
-  ingest        Import from HDF5 (robomimic/LIBERO) into .kdb
-  info          Show database summary
-  create-test   Generate sample .kdb with fake data
-```
+- `.kdb` reader/writer with memory-mapped reads;
+- HDF5, LeRobot, and RLDS ingestion;
+- KQL metadata filters;
+- CLI commands for info, schema, validate, query, mix, merge, export, and bench;
+- Python bindings and PyTorch-facing helpers;
+- gRPC server and Python client.
 
-## Roadmap
+Roadmap:
 
-- [x] Core storage engine (`.kdb` format, reader, writer)
-- [x] HDF5 ingest (robomimic / LIBERO)
-- [x] CLI (`kino info`, `kino ingest`, `kino create-test`)
-- [x] LeRobot v3 ingest
-- [x] RLDS ingest (TFRecord parser, no TF dependency)
-- [x] KQL query language (filter by embodiment, task, success)
-- [x] `kino mix` — weighted dataset mixtures
-- [x] gRPC batch serving
-- [x] Shared memory serving (zero-copy)
-- [x] PyTorch DataLoader (`pip install kinodb`)
-- [x] `kino export` — write back to HDF5/LeRobot/NumPy
-- [x] Video-aware image compression (H.264/H.265 segments)
-- [x] Hardware-accelerated decode (NVDEC/VAAPI)
+- published wheels and packaged CLI releases;
+- lazy/window-level frame sampling;
+- raw compressed-image return path and faster decode options;
+- more complete video segment indexing;
+- shared-memory serving for high-throughput single-node training.
+
+## License
+
+License information has not been added yet.
