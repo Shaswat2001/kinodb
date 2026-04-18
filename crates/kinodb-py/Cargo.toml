@@ -3,7 +3,7 @@ name = "kinodb-py"
 version = "0.1.0"
 edition = "2021"
 description = "Python bindings for kinodb — a trajectory database for robot learning"
-license = "MIT OR Apache-2.0"
+license = "MIT"
  
 [lib]
 name = "kinodb"

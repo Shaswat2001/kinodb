@@ -3,7 +3,7 @@ name = "kinodb-serve"
 version = "0.1.0"
 edition = "2021"
 description = "gRPC batch server for kinodb — serves trajectory data at GPU-saturating speeds"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [[bin]]
 name = "kino-serve"

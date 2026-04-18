@@ -229,4 +229,4 @@ Roadmap:
 
 ## License
 
-License information has not been added yet.
+MIT. See [LICENSE](LICENSE).

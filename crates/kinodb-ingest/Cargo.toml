@@ -3,7 +3,7 @@ name = "kinodb-ingest"
 version = "0.1.0"
 edition = "2021"
 description = "Format ingesters for kinodb — reads RLDS, LeRobot, HDF5 into .kdb"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [dependencies]
 kinodb-core = { path = "../kinodb-core" }
