@@ -1,110 +1,176 @@
 ---
 title: IO Performance
-description: Real-dataset IO results from the benchmark history.
+description: Scaling, storage, and image-throughput benchmark results from the latest experiment run.
 ---
 
-The launch benchmark suite compared native dataset loaders against `.kdb` files after ingest. The suite covered LeRobot Parquet datasets, robomimic HDF5 datasets, and image-heavy LeRobot/LIBERO variants.
+This page presents the systems benchmarks from the latest pasted experiment log. It focuses on open time, sequential reads, KQL latency, storage size, write speed, and image-throughput validation.
 
 :::note
-These docs record the benchmark results from the project chat history and PDF notes. The benchmark scripts/results zip are not currently committed in this repository, so treat this page as the launch report rather than a reproducible benchmark artifact. The next documentation pass should add the scripts and raw JSON outputs.
+The raw JSON paths in the run were under `/home/ubuntu/shaswat/kinodb/neurips_experiments/results/`. Those files are not committed here yet, so this page is a polished launch report, not a fully reproducible benchmark bundle.
 :::
 
-## Final Scorecard
+## Experiment 3: Scaling
 
-After fixing robomimic episode sorting and LeRobot image detection, the recorded final summary was:
+Synthetic datasets were generated at 100, 500, 1K, 5K, 10K, and 50K episodes, with 50 frames per episode. Each run generated HDF5, Parquet, ingested to kinodb, then measured open, sequential read, and KQL.
 
-| Dataset class | Metric | Min | Median | Max |
-| --- | --- | ---: | ---: | ---: |
-| Tabular, 10 datasets | Open | 1x | 113x | 146x |
-| Tabular, 10 datasets | Sequential read | 0.8x | 9x | 724x |
-| Tabular, 10 datasets | Random read | 0.7x | 8.6x | 843x |
-| Tabular, 10 datasets | Metadata scan | 48x | 375x | 612x |
-| Tabular, 10 datasets | Storage reduction | 1.1x | 5.7x | 8.7x |
+<div class="kino-result-grid">
+  <div class="kino-result-card">
+    <span>50K open time</span>
+    <b>1.2ms</b>
+    <em>kinodb vs 158.1ms HDF5 and 2.87s Parquet</em>
+  </div>
+  <div class="kino-result-card">
+    <span>50K sequential read</span>
+    <b>1.26s</b>
+    <em>kinodb vs 13.36s HDF5 and 118.40s Parquet</em>
+  </div>
+  <div class="kino-result-card">
+    <span>50K KQL scan</span>
+    <b>31.7ms</b>
+    <em>metadata query across 50K episodes</em>
+  </div>
+  <div class="kino-result-card">
+    <span>Parquet seq gap</span>
+    <b>94x</b>
+    <em>at 50K episodes: 118.40s vs 1.26s</em>
+  </div>
+</div>
 
-Image datasets:
+### 50K Episode Snapshot
 
-| Metric | Range |
-| --- | ---: |
-| Open | 149-420x faster |
-| Random read | 3.3-20x faster |
-| Metadata scan | 605-2,648x faster |
-| Storage | 0.9-1.0x native size with JPEG pass-through |
+<div class="kino-compare-bars" aria-label="50K episode benchmark snapshot">
+  <div class="kino-compare-row">
+    <span>Open / HDF5</span>
+    <div class="kino-track"><i style="--w: 6%;"></i></div>
+    <strong>158.1ms</strong>
+  </div>
+  <div class="kino-compare-row">
+    <span>Open / Parquet</span>
+    <div class="kino-track"><i style="--w: 100%;"></i></div>
+    <strong>2.87s</strong>
+  </div>
+  <div class="kino-compare-row is-kdb">
+    <span>Open / kinodb</span>
+    <div class="kino-track"><i style="--w: 1%;"></i></div>
+    <strong>1.2ms</strong>
+  </div>
+  <div class="kino-compare-row">
+    <span>Sequential / HDF5</span>
+    <div class="kino-track"><i style="--w: 11%;"></i></div>
+    <strong>13.36s</strong>
+  </div>
+  <div class="kino-compare-row">
+    <span>Sequential / Parquet</span>
+    <div class="kino-track"><i style="--w: 100%;"></i></div>
+    <strong>118.40s</strong>
+  </div>
+  <div class="kino-compare-row is-kdb">
+    <span>Sequential / kinodb</span>
+    <div class="kino-track"><i style="--w: 1%;"></i></div>
+    <strong>1.26s</strong>
+  </div>
+</div>
 
-Correctness:
+### Full Scaling Table
 
-| Check | Result |
-| --- | --- |
-| Datasets | 15/15 exact |
-| Action max absolute diff | 0.0 on every dataset |
-| robomimic issue | benchmark sorted demos lexicographically; fixed to numeric sort |
-| image tag issue | reporting bug in benchmark image detector, data was present |
+| Episodes | HDF5 open | Parquet open | kinodb open | HDF5 seq | Parquet seq | kinodb seq | KQL |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 912us | 18.1ms | 51us | 26.0ms | 50.1ms | 2.2ms | 88us |
+| 500 | 1.6ms | 26.9ms | 133us | 127.5ms | 226.7ms | 10.7ms | 259us |
+| 1,000 | 2.4ms | 48.9ms | 82us | 251.8ms | 480.2ms | 18.8ms | 507us |
+| 5,000 | 10.0ms | 312.8ms | 158us | 1.30s | 3.22s | 90.1ms | 2.9ms |
+| 10,000 | 19.0ms | 666.8ms | 262us | 2.61s | 8.30s | 181.4ms | 5.7ms |
+| 50,000 | 158.1ms | 2.87s | 1.2ms | 13.36s | 118.40s | 1.26s | 31.7ms |
 
-## Representative Dataset Table
+The scaling shape is the result: kinodb keeps open and metadata access near-index-bound, while Parquet open/read costs grow sharply with many small trajectory groups.
 
-Earlier detailed results in the chat recorded these representative values:
+## Experiment 4: Storage Efficiency
 
-| Dataset | Source | Open | Sequential read | Random read | Metadata scan | Storage |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| LeRobot PushT | Parquet | 112x | 41x | 41x | 359x | 12.3x smaller |
-| LeRobot xarm_lift | Parquet | 73x | 152x | 149x | 275x | 1.7x smaller |
-| LeRobot taco_play | Parquet | 82x | 463x | 785x | 658x | 1.1x smaller |
-| LeRobot ALOHA insertion | Parquet | 90x | 37x | 51x | 297x | 29x smaller |
-| robomimic lift | HDF5 | 27x | 9x | 8x | 48x | 8.7x smaller |
-| robomimic can | HDF5 | 23x | 4x | 4x | 54x | 7.7x smaller |
+The storage experiment tested state-only data and image-heavy data across HDF5, compressed HDF5, NPY directory layouts, Parquet, and kinodb.
 
-The later final scorecard is more conservative on storage medians because image datasets were re-ingested with JPEG pass-through and because some earlier image runs did not contain image payloads in `.kdb`.
+### State-Only Storage
 
-## What The Numbers Mean
+| Dataset size | HDF5 | HDF5 compressed | NPY dir | Parquet | kinodb |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 100 eps x 50 frames | 0.64 MB | 1.40 MB | 0.48 MB | 0.91 MB | **0.45 MB** |
+| 500 eps x 50 frames | 3.19 MB | 6.98 MB | 2.39 MB | 4.02 MB | **2.26 MB** |
+| 1,000 eps x 50 frames | 6.37 MB | 13.96 MB | 4.78 MB | 7.45 MB | **4.52 MB** |
 
-### Open time
+Write time for the 1,000-episode state-only case:
 
-Opening `.kdb` maps the file and reads the header/index. Native Parquet workflows often load or inspect table structures before episode access. This is why open-time speedups are large.
+<div class="kino-bar-list" aria-label="State-only write time">
+  <div class="kino-bar-row">
+    <span>HDF5</span>
+    <div class="kino-track"><i style="--w: 43%;"></i></div>
+    <strong>0.542s</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>HDF5 compressed</span>
+    <div class="kino-track"><i style="--w: 100%;"></i></div>
+    <strong>1.250s</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>NPY dir</span>
+    <div class="kino-track"><i style="--w: 20%;"></i></div>
+    <strong>0.247s</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>Parquet</span>
+    <div class="kino-track"><i style="--w: 32%;"></i></div>
+    <strong>0.400s</strong>
+  </div>
+  <div class="kino-bar-row is-kdb">
+    <span>kinodb</span>
+    <div class="kino-track"><i style="--w: 2%;"></i></div>
+    <strong>0.018s</strong>
+  </div>
+</div>
 
-### Metadata scan
+### Image Storage
 
-Metadata scans are the cleanest kinodb win. KQL and `read_meta()` do not decode actions or images; they read compact metadata blobs addressed by the episode index.
+For image-heavy synthetic data, kinodb lands at storage parity with raw layouts and writes faster than Parquet. HDF5 compression is not helpful on these synthetic images; it increases size slightly and makes writes much slower.
 
-### Sequential and random reads
+| Dataset size | HDF5 | HDF5 compressed | NPY dir | Parquet | kinodb |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 84x84, 100 eps x 30 frames | 64.10 MB | 72.08 MB | 63.82 MB | 64.06 MB | **63.78 MB** |
+| 84x84, 500 eps x 30 frames | 320.48 MB | 360.38 MB | 319.10 MB | 320.17 MB | **318.90 MB** |
+| 224x224, 50 eps x 30 frames | 226.09 MB | 227.73 MB | 225.95 MB | 226.08 MB | **225.93 MB** |
+| 224x224, 200 eps x 30 frames | 904.35 MB | 910.91 MB | 903.80 MB | 904.32 MB | **903.72 MB** |
 
-The strongest tabular wins come from episode-contiguous layout and avoiding Parquet row filtering per episode. On HDF5, wins vary because HDF5 is already efficient for direct array reads.
+Representative write times:
 
-### Image storage
+| Case | HDF5 | HDF5 compressed | NPY dir | Parquet | kinodb |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 84x84, 500 episodes | 0.680s | 13.014s | 0.410s | 1.364s | **0.269s** |
+| 224x224, 200 episodes | 0.835s | 25.685s | 0.705s | 4.867s | **0.808s** |
 
-The benchmark history had a few stages:
+## Experiment 5: Image Throughput
 
-1. Raw image storage expanded files dramatically.
-2. JPEG pass-through fixed the blow-up and achieved near-native parity.
-3. Recompression was discussed as a possible storage knob, but the user chose not to include that path at the time.
+The image-throughput experiment found a benchmark validity issue before it produced kinodb numbers:
 
-The docs therefore claim image storage parity, not an implemented recompression win.
-
-## Honest Limitations
-
-HDF5 can beat kinodb on raw image-array access because `h5py` can return large contiguous arrays efficiently and kinodb currently decodes/copies images through the Python bridge.
-
-The current best framing:
-
-- kinodb wins strongly on metadata, open, tabular random access, and cross-format workflows,
-- image-heavy reads need lazy image loading, raw compressed-byte returns, or faster decode paths,
-- storage parity for image datasets is already useful because it avoids `.kdb` raw RGB expansion.
-
-## Reproducing A Local Synthetic Benchmark
-
-The built-in benchmark is synthetic but useful for smoke testing:
-
-```bash
-cargo build --release
-target/release/kino bench -n 500 --frames 50
-target/release/kino bench -n 100 --frames 20 --images
+```text
+failed to open '/tmp/.../data.kdb': header error:
+unsupported version 1.0 (we support up to 0.1)
 ```
 
-It measures:
+That means this experiment should not be used to claim kinodb image-throughput performance yet. The native baselines are still useful as a target once the synthetic generator writes the current `.kdb` header version.
 
-- write time,
-- open time,
-- sequential full-episode reads,
-- deterministic random reads,
-- metadata-only reads,
-- KQL filters.
+| Resolution | HDF5 throughput | HDF5 P50 | HDF5 P99 | Parquet throughput | Parquet P50 | Parquet P99 | kinodb |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 84x84 | ~1,032 samples/s | ~30.9ms | ~33.0ms | ~5,181 samples/s | ~6.2ms | ~7.0ms | invalid run |
+| 224x224 | ~832 samples/s | ~37.5ms | ~45.4ms | ~3,454 samples/s | ~9.2ms | ~11.3ms | invalid run |
 
-For publication claims, use the real benchmark suite and commit the raw JSON/HTML outputs.
+:::caution
+The correct next step is to fix the image-throughput generator or reader compatibility, rerun Experiment 5, and then update this table. Until then, the docs should claim storage parity and training-loop wins for image datasets, not standalone kinodb image-throughput numbers from this run.
+:::
+
+## Summary
+
+The strongest systems claims from this run are:
+
+- kinodb opens 50K-episode synthetic datasets in 1.2ms;
+- kinodb sequentially reads the same 50K run in 1.26s vs 13.36s for HDF5 and 118.40s for Parquet;
+- KQL metadata queries stay below 32ms at 50K episodes;
+- state-only `.kdb` storage is the smallest format tested in the run;
+- image-heavy `.kdb` storage is at native-size parity, with faster writes than Parquet in the reported cases;
+- the standalone image-throughput benchmark needs a header-version fix before publication.

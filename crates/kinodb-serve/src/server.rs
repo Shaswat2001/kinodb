@@ -29,6 +29,28 @@ enum Backend {
     },
 }
 
+enum BackendError {
+    NotFound(String),
+    Internal(String),
+}
+
+impl BackendError {
+    fn not_found(message: impl Into<String>) -> Self {
+        Self::NotFound(message.into())
+    }
+
+    fn internal(message: impl Into<String>) -> Self {
+        Self::Internal(message.into())
+    }
+
+    fn into_status(self) -> Status {
+        match self {
+            Self::NotFound(message) => Status::not_found(message),
+            Self::Internal(message) => Status::internal(message),
+        }
+    }
+}
+
 impl Backend {
     fn num_episodes(&self) -> usize {
         match self {
@@ -44,43 +66,42 @@ impl Backend {
         }
     }
 
-    fn read_episode(&self, pos: usize) -> Result<kinodb_core::Episode, Status> {
+    fn read_episode(&self, pos: usize) -> Result<kinodb_core::Episode, BackendError> {
         match self {
             Backend::Single { reader, .. } => reader
                 .read_episode(pos)
-                .map_err(|e| Status::not_found(format!("episode {}: {}", pos, e))),
+                .map_err(|e| BackendError::not_found(format!("episode {}: {}", pos, e))),
             Backend::Mix { mixture, .. } => mixture
                 .lock()
                 .unwrap()
                 .read_global(pos)
-                .map_err(|e| Status::not_found(format!("global {}: {}", pos, e))),
+                .map_err(|e| BackendError::not_found(format!("global {}: {}", pos, e))),
         }
     }
 
-    fn read_meta(&self, pos: usize) -> Result<kinodb_core::EpisodeMeta, Status> {
+    fn read_meta(&self, pos: usize) -> Result<kinodb_core::EpisodeMeta, BackendError> {
         match self {
             Backend::Single { reader, .. } => reader
                 .read_meta(pos)
-                .map_err(|e| Status::not_found(format!("meta {}: {}", pos, e))),
+                .map_err(|e| BackendError::not_found(format!("meta {}: {}", pos, e))),
             Backend::Mix { mixture, .. } => {
                 // Read full episode and return meta (mixture doesn't have read_global_meta)
-                let ep = mixture
-                    .lock()
-                    .unwrap()
-                    .read_global(pos)
-                    .map_err(|e| Status::not_found(format!("global meta {}: {}", pos, e)))?;
+                let ep =
+                    mixture.lock().unwrap().read_global(pos).map_err(|e| {
+                        BackendError::not_found(format!("global meta {}: {}", pos, e))
+                    })?;
                 Ok(ep.meta)
             }
         }
     }
 
-    fn sample(&self) -> Result<kinodb_core::Episode, Status> {
+    fn sample(&self) -> Result<kinodb_core::Episode, BackendError> {
         match self {
             Backend::Single { reader, .. } => {
                 // Simple random using position
                 let n = reader.num_episodes();
                 if n == 0 {
-                    return Err(Status::not_found("empty database"));
+                    return Err(BackendError::not_found("empty database"));
                 }
                 let pos = (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -89,13 +110,13 @@ impl Backend {
                     % n;
                 reader
                     .read_episode(pos)
-                    .map_err(|e| Status::internal(format!("{}", e)))
+                    .map_err(|e| BackendError::internal(format!("{}", e)))
             }
             Backend::Mix { mixture, .. } => mixture
                 .lock()
                 .unwrap()
                 .sample()
-                .map_err(|e| Status::internal(format!("{}", e))),
+                .map_err(|e| BackendError::internal(format!("{}", e))),
         }
     }
 
@@ -214,7 +235,10 @@ impl KinoService for KinoServer {
         request: Request<pb::EpisodeRequest>,
     ) -> Result<Response<pb::EpisodeResponse>, Status> {
         let pos = request.into_inner().position as usize;
-        let ep = self.backend.read_episode(pos)?;
+        let ep = self
+            .backend
+            .read_episode(pos)
+            .map_err(BackendError::into_status)?;
         Ok(Response::new(pb::EpisodeResponse {
             episode: Some(episode_to_pb(&ep, true)),
         }))
@@ -225,7 +249,10 @@ impl KinoService for KinoServer {
         request: Request<pb::MetaRequest>,
     ) -> Result<Response<pb::MetaResponse>, Status> {
         let pos = request.into_inner().position as usize;
-        let meta = self.backend.read_meta(pos)?;
+        let meta = self
+            .backend
+            .read_meta(pos)
+            .map_err(BackendError::into_status)?;
         Ok(Response::new(pb::MetaResponse {
             meta: Some(meta_to_pb(&meta)),
         }))
@@ -251,13 +278,16 @@ impl KinoService for KinoServer {
                 let n = self.backend.num_episodes();
                 for i in 0..batch_size {
                     let pos = (start + i) % n;
-                    let ep = self.backend.read_episode(pos)?;
+                    let ep = self
+                        .backend
+                        .read_episode(pos)
+                        .map_err(BackendError::into_status)?;
                     episodes.push(episode_to_pb(&ep, include_images));
                 }
             }
             "random" | "weighted" | "" => {
                 for _ in 0..batch_size {
-                    let ep = self.backend.sample()?;
+                    let ep = self.backend.sample().map_err(BackendError::into_status)?;
                     episodes.push(episode_to_pb(&ep, include_images));
                 }
             }
@@ -291,7 +321,10 @@ impl KinoService for KinoServer {
             if positions.len() >= limit {
                 break;
             }
-            let meta = self.backend.read_meta(i)?;
+            let meta = self
+                .backend
+                .read_meta(i)
+                .map_err(BackendError::into_status)?;
             if kql::evaluate(&query, &meta) {
                 positions.push(i as u64);
                 metas.push(meta_to_pb(&meta));

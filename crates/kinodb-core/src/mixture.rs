@@ -23,11 +23,10 @@
 
 use crate::{Episode, EpisodeMeta, KdbReader, ReadError};
 
-/// One source in a mixture: a reader + its weight.
+/// One source in a mixture.
 struct MixSource {
     reader: KdbReader,
     path: String,
-    weight: f64,
     /// Precomputed: which global indices belong to this source.
     /// global_start..global_start + reader.num_episodes()
     global_start: usize,
@@ -130,7 +129,6 @@ impl MixtureBuilder {
             sources.push(MixSource {
                 reader,
                 path: path.clone(),
-                weight: *weight,
                 global_start: total_episodes,
             });
 

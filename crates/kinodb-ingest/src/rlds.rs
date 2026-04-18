@@ -625,7 +625,7 @@ fn get_bytes_feature(features: &BTreeMap<String, FeatureValue>, key: &str) -> Op
 
 fn decode_image_bytes(data: &[u8]) -> Result<(Vec<u8>, u32, u32), RldsError> {
     // Try to detect format from magic bytes and decode
-    use image::io::Reader as ImageReader;
+    use image::ImageReader;
     use std::io::Cursor;
 
     let reader = ImageReader::new(Cursor::new(data))

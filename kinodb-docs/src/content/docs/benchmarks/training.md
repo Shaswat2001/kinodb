@@ -1,104 +1,177 @@
 ---
 title: Training Pipeline
-description: Data loading, batch construction, training-step, and inference benchmark notes.
+description: End-to-end policy training curves, mixed-source training, and KQL interoperability results.
 ---
 
-The training benchmarks were designed to answer one question: does the storage speedup survive once data flows through a model loop?
+The training benchmarks answer the question that matters most for robot learning: when data loading is measured inside the training loop, does kinodb move wall-clock time?
 
-The key lesson from the chat history is that the benchmark must include disk access. An earlier script loaded both native and `.kdb` data into NumPy arrays first, then timed PyTorch. That measured model compute after the data source had disappeared. The corrected benchmark reads from disk inside the measured path.
+The latest experiment run says yes. For CNN and MLP policies, kinodb turns the loader from the dominant cost into a smaller part of the step. For ViT policies, the win is still visible but smaller because model compute dominates.
 
-## Correct Methodology
+:::note
+These results come from the pasted run log at `/home/ubuntu/shaswat/kinodb/neurips_experiments/results/`. The raw JSON files are not committed in this repository yet, so this page is a launch report rather than a fully reproducible artifact.
+:::
 
-Measure:
+## Experiment 1: Training Curves
 
-| Metric | What it includes |
-| --- | --- |
-| Load | `get_episode()` / native episode load from disk |
-| Batch | load plus tensor/batch construction |
-| Training step | load plus forward, backward, and optimizer step |
-| Inference | load plus forward pass |
+Setup:
 
-Avoid:
+- datasets: `pusht_image` and `libero_spatial`;
+- policies: `cnn_bc`, `mlp`, and `vit`;
+- seeds: `42`, `123`, and `456`;
+- skipped: `robomimic_lift`;
+- metric: native loader vs kinodb loader inside the measured training loop.
 
-- preloading all episodes into RAM before timing,
-- comparing native in-memory arrays to `.kdb` disk reads,
-- using different state dimensions across native and `.kdb` paths,
-- batching mixed action dimensions without padding or schema-aware collate logic.
+<div class="kino-result-grid">
+  <div class="kino-result-card">
+    <span>Best total speedup</span>
+    <b>8.0x</b>
+    <em>LIBERO spatial + MLP, seed 42</em>
+  </div>
+  <div class="kino-result-card">
+    <span>Data time cut</span>
+    <b>~9x</b>
+    <em>LIBERO data step: ~34s native to ~3.6s kinodb</em>
+  </div>
+  <div class="kino-result-card">
+    <span>Image data cut</span>
+    <b>~8x</b>
+    <em>PushT image data step: ~45s native to ~5.6s kinodb</em>
+  </div>
+  <div class="kino-result-card">
+    <span>Compute-heavy floor</span>
+    <b>2.2-2.4x</b>
+    <em>ViT still improves, but compute dominates the step</em>
+  </div>
+</div>
 
-## Recorded Results
+### Total Speedup By Dataset And Policy
 
-The chat history records these corrected training/inference summaries:
+<div class="kino-bar-list" aria-label="End-to-end training speedups">
+  <div class="kino-bar-row">
+    <span>LIBERO spatial / MLP</span>
+    <div class="kino-track"><i style="--w: 96%;"></i></div>
+    <strong>7.7x +/- 0.2</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>LIBERO spatial / CNN BC</span>
+    <div class="kino-track"><i style="--w: 89%;"></i></div>
+    <strong>7.1x +/- 0.0</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>PushT image / CNN BC</span>
+    <div class="kino-track"><i style="--w: 85%;"></i></div>
+    <strong>6.8x +/- 0.0</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>PushT image / MLP</span>
+    <div class="kino-track"><i style="--w: 83%;"></i></div>
+    <strong>6.6x +/- 0.0</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>PushT image / ViT</span>
+    <div class="kino-track"><i style="--w: 30%;"></i></div>
+    <strong>2.4x +/- 0.0</strong>
+  </div>
+  <div class="kino-bar-row">
+    <span>LIBERO spatial / ViT</span>
+    <div class="kino-track"><i style="--w: 28%;"></i></div>
+    <strong>2.2x +/- 0.0</strong>
+  </div>
+</div>
 
-| Dataset | Load | Batch | Train | Infer |
-| --- | ---: | ---: | ---: | ---: |
-| taco_play | 590x | 736x | 185x | 261x |
-| xarm_lift | 125x | 117x | 19x | 31x |
-| aloha_insertion | 35x | 50x | 35x | 35x |
-| aloha_transfer | 44x | 53x | 44x | 37x |
-| pusht | 38x | 21x | 15x | 12x |
-| pusht_image | 5-20x | 16x | 12x | 12x |
-| LIBERO image | 0.2-3x | 3.6-4.2x | 3.7-4.2x | 3.8-4.2x |
+| Dataset | Policy | Init speedup | Total speedup |
+| --- | --- | ---: | ---: |
+| `libero_spatial` | `cnn_bc` | 1394x | 7.1x +/- 0.0 |
+| `libero_spatial` | `mlp` | 1364x | 7.7x +/- 0.2 |
+| `libero_spatial` | `vit` | 2828x | 2.2x +/- 0.0 |
+| `pusht_image` | `cnn_bc` | 26x | 6.8x +/- 0.0 |
+| `pusht_image` | `mlp` | 31x | 6.6x +/- 0.0 |
+| `pusht_image` | `vit` | 31x | 2.4x +/- 0.0 |
 
-Policy-level launch snippets:
+### What The Curve Logs Show
 
-| Dataset x policy | Speedup |
+The losses match between native and kinodb for the same dataset, policy, seed, and epoch. The win is wall-clock time, not a different learning target.
+
+| Run | Native data per epoch | kinodb data per epoch | Native compute | kinodb compute | Total speedup | Data share shift |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| PushT image + CNN BC | ~44-45s | ~5.4-5.5s | ~1.7-1.9s | ~1.2-1.5s | 6.7-6.8x | 96% native to 79-80% kinodb |
+| PushT image + MLP | ~44-45s | ~5.5-5.7s | ~1.5-1.7s | ~1.2-1.4s | 6.6-6.7x | 96% native to 80-81% kinodb |
+| PushT image + ViT | ~45s | ~5.8s | ~23s | ~22.6s | 2.4x | 66% native to 20% kinodb |
+| LIBERO spatial + CNN BC | ~34s | ~3.6-3.7s | ~1.7-1.9s | ~1.3-1.5s | 7.1x | 93% native to 71% kinodb |
+| LIBERO spatial + MLP | ~34s | ~3.6-3.8s | ~1.2-1.5s | ~0.9-1.2s | 7.6-8.0x | 89-94% native to 76% kinodb |
+| LIBERO spatial + ViT | ~34-35s | ~3.8-3.9s | ~22.6-24.6s | ~23s | 2.2-2.3x | 57-59% native to 14% kinodb |
+
+Representative matching losses:
+
+| Dataset / policy / seed | Native epoch 20 | kinodb epoch 20 |
+| --- | ---: | ---: |
+| PushT image / CNN BC / 42 | 1445.6413 | 1445.6413 |
+| PushT image / MLP / 123 | 1294.5226 | 1294.5226 |
+| LIBERO spatial / CNN BC / 42 | 0.0481 | 0.0481 |
+| LIBERO spatial / ViT / 456 | 0.0403 | 0.0403 |
+
+## Experiment 2: Interoperability
+
+The interoperability experiment tests the main systems claim: after conversion, training code can sample from multiple robotics formats through one kinodb path.
+
+<div class="kino-result-grid">
+  <div class="kino-result-card">
+    <span>Loader code</span>
+    <b>8 LOC</b>
+    <em>kinodb mixed-source loader vs 26 native LOC</em>
+  </div>
+  <div class="kino-result-card">
+    <span>Sources mixed</span>
+    <b>4</b>
+    <em>PushT image, LIBERO image, PushT state, ALOHA insertion</em>
+  </div>
+  <div class="kino-result-card">
+    <span>Schema padding</span>
+    <b>14 / 14</b>
+    <em>max state and action dimensions across sources</em>
+  </div>
+  <div class="kino-result-card">
+    <span>Final logged loss</span>
+    <b>33.6219</b>
+    <em>after 15 logged epochs on the mixed dataset</em>
+  </div>
+</div>
+
+Mixed sources:
+
+| Source | Weight |
 | --- | ---: |
-| PushT x MLP | about 9.4x |
-| PushT x Diffusion-style policy | about 5.2x |
-| PushT x ACT-style policy | about 1.6x |
-| PushT x Transformer BC | about 4.5x |
-| PushT image x CNN BC | about 7.8x |
-| PushT image x ViT | about 4.7x |
-| ALOHA insertion x MLP | about 5.8x |
-| ALOHA insertion x ACT-style policy | about 1.5x |
+| `lerobot_pusht_image.kdb` | 0.25 |
+| `lerobot_libero_spatial_image.kdb` | 0.25 |
+| `lerobot_pusht.kdb` | 0.25 |
+| `lerobot_aloha_sim_insertion_scripted.kdb` | 0.25 |
 
-The speedup shrinks as the model becomes compute-heavy. That is expected: when forward/backward dominates wall-clock time, improving data loading changes a smaller part of the total step.
+Mixed-source training log:
 
-## Bugs Found And Fixed
+| Epoch | Loss | Time |
+| ---: | ---: | ---: |
+| 0 | 5559.1095 | 0.642s |
+| 5 | 360.9029 | 0.179s |
+| 10 | 57.7633 | 0.182s |
+| 15 | 33.6219 | 0.179s |
 
-### Preload bug
+### KQL Query Latency
 
-The first training script loaded data into memory and then timed a `TensorDataset`. That made native and kinodb look artificially similar.
+The KQL scan stays in microseconds on these converted datasets.
 
-Fix: streaming mode where `__getitem__` performs the native read or `.kdb` read during the measured path.
+| Dataset | Query | Matches | Time |
+| --- | --- | ---: | ---: |
+| ALOHA insertion | `num_frames > 50` | 50/50 | 1620us |
+| ALOHA insertion | `num_frames > 100` | 50/50 | 10us |
+| LIBERO spatial image | `num_frames > 50` | 432/432 | 2890us |
+| LIBERO spatial image | `num_frames > 100` | 354/432 | 106us |
+| PushT state | `num_frames > 50` | 205/206 | 97us |
+| PushT state | `num_frames > 100` | 152/206 | 33us |
+| PushT image | `num_frames > 50` | 206/206 | 1205us |
+| PushT image | `num_frames > 100` | 201/206 | 33us |
 
-### robomimic state mismatch
+## Interpretation
 
-Native HDF5 benchmark code selected one observation key, while kinodb concatenated all 2D `obs/*` state keys. That caused dimension mismatches such as a native model using one state dimension and a `.kdb` model using the full concatenated state.
+kinodb helps most when the native loader is the bottleneck. That is exactly what the data-share percentages show: CNN/MLP runs spend roughly 89-96% of native time in data loading, then drop to 71-81% with kinodb. ViT runs are still faster, but their compute budget is so large that loader gains have a smaller ceiling.
 
-Fixes:
-
-- native HDF5 state extraction returns all state keys,
-- `_extract_state()` concatenates those keys,
-- inference builds separate native and `.kdb` models if dimensions still differ.
-
-### Mixed action dimensions
-
-Mixing PushT and ALOHA failed because `torch.stack` cannot stack action vectors of size 2 and 14.
-
-Fix: detect max state/action dimensions across sources and zero-pad smaller vectors, or use a schema-aware collate strategy.
-
-## NeurIPS-Ready Experiments Still Needed
-
-The benchmark numbers are good launch material. For a paper, the chat history correctly identified that they are not enough by themselves.
-
-Priority experiments:
-
-| Experiment | Why it matters |
-| --- | --- |
-| Real policy curves | Show loss vs wall-clock time for native vs kinodb, not only IO microbenchmarks |
-| Interoperability demo | Train one model from HDF5 + LeRobot + RLDS converted into one mixture |
-| Scaling plot | Show open/query behavior as episode count reaches 100K+ |
-| Multi-worker scaling | Show behavior with `num_workers` across datasets |
-| Ablation | mmap, index, actions-only read, JPEG pass-through |
-
-The strongest paper figure would be a real Diffusion Policy or ACT training run where the learning curve matches native data but reaches the same loss earlier in wall-clock time.
-
-## Reporting Guidance
-
-Use careful language:
-
-- "kinodb accelerates the data-loading portion of training" is precise.
-- "kinodb makes all training 10x faster" is not true for compute-heavy policies.
-- "image-heavy workloads need lazy/raw image paths" is honest and useful.
-- "the central contribution is a unified trajectory data layer" is stronger than "a faster file format."
+The mixed-source experiment is equally important: the result is not only faster loading, but fewer custom loaders and one training path across datasets with different state/action dimensions.

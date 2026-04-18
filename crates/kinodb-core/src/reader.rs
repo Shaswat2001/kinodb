@@ -22,8 +22,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::{
-    Episode, EpisodeId, EpisodeIndex, EpisodeMeta, FileHeader, Frame,
-    ImageObs, IndexEntry,
+    Episode, EpisodeId, EpisodeIndex, EpisodeMeta, FileHeader, Frame, ImageObs, IndexEntry,
 };
 
 /// Backing storage for the reader — either mmap or owned bytes.
@@ -62,13 +61,21 @@ pub enum ReadError {
     Header(crate::HeaderError),
     Index(crate::IndexError),
     /// Tried to access an episode position that doesn't exist.
-    EpisodeNotFound { position: usize },
+    EpisodeNotFound {
+        position: usize,
+    },
     /// Tried to find an episode by id that doesn't exist.
-    EpisodeIdNotFound { id: EpisodeId },
+    EpisodeIdNotFound {
+        id: EpisodeId,
+    },
     /// Data is truncated or corrupt.
-    UnexpectedEof { context: &'static str },
+    UnexpectedEof {
+        context: &'static str,
+    },
     /// A string in the file is not valid UTF-8.
-    InvalidUtf8 { context: &'static str },
+    InvalidUtf8 {
+        context: &'static str,
+    },
 }
 
 impl std::fmt::Display for ReadError {
@@ -274,8 +281,7 @@ impl KdbReader {
         let mut act_cursor = Cursor::new(&self.data[act_start..act_end]);
 
         // Pre-read all per-frame data from the actions section
-        let mut frame_data: Vec<(Vec<f32>, Vec<f32>, f32, bool)> =
-            Vec::with_capacity(num_frames);
+        let mut frame_data: Vec<(Vec<f32>, Vec<f32>, f32, bool)> = Vec::with_capacity(num_frames);
 
         for _ in 0..num_frames {
             let state = act_cursor.read_f32_vec(state_dim, "state")?;
@@ -498,11 +504,9 @@ fn decompress_image(
             context: "image format detection failed",
         })?;
 
-    let img = reader
-        .decode()
-        .map_err(|_| ReadError::UnexpectedEof {
-            context: "image decode failed",
-        })?;
+    let img = reader.decode().map_err(|_| ReadError::UnexpectedEof {
+        context: "image decode failed",
+    })?;
 
     let rgb = img.to_rgb8();
 
@@ -734,7 +738,7 @@ mod tests {
                     for chunk in pixels.chunks_mut(3) {
                         chunk[0] = 200; // R
                         chunk[1] = 100; // G
-                        chunk[2] = 50;  // B
+                        chunk[2] = 50; // B
                     }
                     Frame {
                         timestep: t,

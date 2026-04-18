@@ -391,7 +391,7 @@ fn compress_jpeg(
     let mut encoder = JpegEncoder::new_with_quality(&mut buf, quality);
     encoder
         .encode(raw_rgb, width, height, image::ExtendedColorType::Rgb8)
-        .map_err(|e| WriteError::Io(io::Error::new(io::ErrorKind::Other, e.to_string())))?;
+        .map_err(|e| WriteError::Io(io::Error::other(e.to_string())))?;
 
     Ok(buf.into_inner())
 }

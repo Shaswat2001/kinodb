@@ -17,7 +17,10 @@ pub fn run(
         "lerobot" => run_lerobot(src, output, embodiment, task, max_episodes, compress),
         "rlds" | "tfrecord" => run_rlds(src, output, embodiment, task, fps, max_episodes),
         other => {
-            eprintln!("Unsupported format: '{}'. Supported: hdf5, lerobot, rlds", other);
+            eprintln!(
+                "Unsupported format: '{}'. Supported: hdf5, lerobot, rlds",
+                other
+            );
             std::process::exit(1);
         }
     }
@@ -93,7 +96,11 @@ fn run_lerobot(
     println!();
 
     let config = LeRobotIngestConfig {
-        embodiment: if embodiment == "unknown" { None } else { Some(embodiment.to_string()) },
+        embodiment: if embodiment == "unknown" {
+            None
+        } else {
+            Some(embodiment.to_string())
+        },
         task: task.map(|s| s.to_string()),
         max_episodes,
         compress,
