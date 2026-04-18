@@ -7,11 +7,7 @@ The training benchmarks answer the question that matters most for robot learning
 
 The latest experiment run says yes. For CNN and MLP policies, kinodb turns the loader from the dominant cost into a smaller part of the step. For ViT policies, the win is still visible but smaller because model compute dominates.
 
-:::note
-These results come from the pasted run log at `/home/ubuntu/shaswat/kinodb/neurips_experiments/results/`. The raw JSON files are not committed in this repository yet, so this page is a launch report rather than a fully reproducible artifact.
-:::
-
-## Experiment 1: Training Curves
+## Training Curves
 
 Setup:
 
@@ -110,7 +106,7 @@ Representative matching losses:
 | LIBERO spatial / CNN BC / 42 | 0.0481 | 0.0481 |
 | LIBERO spatial / ViT / 456 | 0.0403 | 0.0403 |
 
-## Experiment 2: Interoperability
+## Interoperability
 
 The interoperability experiment tests the main systems claim: after conversion, training code can sample from multiple robotics formats through one kinodb path.
 

@@ -5,11 +5,7 @@ description: Scaling, storage, and image-throughput benchmark results from the l
 
 This page presents the systems benchmarks from the latest pasted experiment log. It focuses on open time, sequential reads, KQL latency, storage size, write speed, and image-throughput validation.
 
-:::note
-The raw JSON paths in the run were under `/home/ubuntu/shaswat/kinodb/neurips_experiments/results/`. Those files are not committed here yet, so this page is a polished launch report, not a fully reproducible benchmark bundle.
-:::
-
-## Experiment 3: Scaling
+## Scaling
 
 Synthetic datasets were generated at 100, 500, 1K, 5K, 10K, and 50K episodes, with 50 frames per episode. Each run generated HDF5, Parquet, ingested to kinodb, then measured open, sequential read, and KQL.
 
@@ -84,7 +80,7 @@ Synthetic datasets were generated at 100, 500, 1K, 5K, 10K, and 50K episodes, wi
 
 The scaling shape is the result: kinodb keeps open and metadata access near-index-bound, while Parquet open/read costs grow sharply with many small trajectory groups.
 
-## Experiment 4: Storage Efficiency
+## Storage Efficiency
 
 The storage experiment tested state-only data and image-heavy data across HDF5, compressed HDF5, NPY directory layouts, Parquet, and kinodb.
 
