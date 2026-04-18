@@ -296,6 +296,14 @@
     color-mix(in srgb, var(--sl-color-bg-nav) 55%, transparent);
 }
 
+.sl-markdown-content .kino-result-grid > .kino-result-card {
+  margin-top: 0;
+}
+
+.sl-markdown-content .kino-result-card > * {
+  margin-top: 0;
+}
+
 .kino-result-card span {
   display: flex;
   align-items: flex-start;
