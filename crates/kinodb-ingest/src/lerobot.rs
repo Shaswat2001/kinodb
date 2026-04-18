@@ -37,7 +37,7 @@ use arrow::array::Array;
 use kinodb_core::{Episode, EpisodeId, EpisodeMeta, Frame, KdbWriter};
 
 /// Configuration for LeRobot ingestion.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LeRobotIngestConfig {
     /// Override embodiment name (if not in info.json).
     pub embodiment: Option<String>,
@@ -47,17 +47,6 @@ pub struct LeRobotIngestConfig {
     pub max_episodes: Option<usize>,
     /// JPEG compress images (quality 1-100). None = raw pixels.
     pub compress: Option<u8>,
-}
-
-impl Default for LeRobotIngestConfig {
-    fn default() -> Self {
-        Self {
-            embodiment: None,
-            task: None,
-            max_episodes: None,
-            compress: None,
-        }
-    }
 }
 
 /// Errors from LeRobot ingestion.
@@ -416,15 +405,12 @@ fn read_parquet_into_episodes(
             // Extract images from struct columns
             let images = extract_image_row(&batch, &image_cols, row, passthrough_compressed);
 
-            episodes
-                .entry(ep_idx)
-                .or_insert_with(Vec::new)
-                .push(RowData {
-                    action,
-                    state,
-                    task_index,
-                    images,
-                });
+            episodes.entry(ep_idx).or_default().push(RowData {
+                action,
+                state,
+                task_index,
+                images,
+            });
         }
     }
 

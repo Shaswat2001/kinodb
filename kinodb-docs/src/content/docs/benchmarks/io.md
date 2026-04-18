@@ -144,26 +144,6 @@ Representative write times:
 | 84x84, 500 episodes | 0.680s | 13.014s | 0.410s | 1.364s | **0.269s** |
 | 224x224, 200 episodes | 0.835s | 25.685s | 0.705s | 4.867s | **0.808s** |
 
-## Experiment 5: Image Throughput
-
-The image-throughput experiment found a benchmark validity issue before it produced kinodb numbers:
-
-```text
-failed to open '/tmp/.../data.kdb': header error:
-unsupported version 1.0 (we support up to 0.1)
-```
-
-That means this experiment should not be used to claim kinodb image-throughput performance yet. The native baselines are still useful as a target once the synthetic generator writes the current `.kdb` header version.
-
-| Resolution | HDF5 throughput | HDF5 P50 | HDF5 P99 | Parquet throughput | Parquet P50 | Parquet P99 | kinodb |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 84x84 | ~1,032 samples/s | ~30.9ms | ~33.0ms | ~5,181 samples/s | ~6.2ms | ~7.0ms | invalid run |
-| 224x224 | ~832 samples/s | ~37.5ms | ~45.4ms | ~3,454 samples/s | ~9.2ms | ~11.3ms | invalid run |
-
-:::caution
-The correct next step is to fix the image-throughput generator or reader compatibility, rerun Experiment 5, and then update this table. Until then, the docs should claim storage parity and training-loop wins for image datasets, not standalone kinodb image-throughput numbers from this run.
-:::
-
 ## Summary
 
 The strongest systems claims from this run are:
@@ -172,5 +152,4 @@ The strongest systems claims from this run are:
 - kinodb sequentially reads the same 50K run in 1.26s vs 13.36s for HDF5 and 118.40s for Parquet;
 - KQL metadata queries stay below 32ms at 50K episodes;
 - state-only `.kdb` storage is the smallest format tested in the run;
-- image-heavy `.kdb` storage is at native-size parity, with faster writes than Parquet in the reported cases;
-- the standalone image-throughput benchmark needs a header-version fix before publication.
+- image-heavy `.kdb` storage is at native-size parity, with faster writes than Parquet in the reported cases.

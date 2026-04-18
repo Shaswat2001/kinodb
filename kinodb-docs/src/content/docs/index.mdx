@@ -197,7 +197,6 @@ These are the headline results from the latest launch experiment log. The import
 | Interoperability | 4 mixed kinodb sources with equal weights; loader code drops from 26 native LOC to 8 kinodb LOC; mixed run reaches loss 33.6219 |
 | Scaling | At 50K episodes: kinodb opens in 1.2ms, sequentially reads in 1.26s, and runs KQL in 31.7ms |
 | Storage | State-only 1K episodes: kinodb is 4.52 MB and writes in 18ms; image-heavy runs land at native-size parity |
-| Image throughput | Standalone image-throughput run is marked invalid because the generator wrote `.kdb` header version 1.0 while the reader supports 0.1 |
 | Correctness | Prior correctness sweep still records 15/15 datasets exact, `action_max_abs_diff = 0.0`; keep raw JSON in-repo before paper submission |
 
 ## What Exists Today

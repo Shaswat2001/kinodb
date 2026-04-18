@@ -298,7 +298,7 @@ fn parse_tf_example(data: &[u8]) -> Result<RldsStep, RldsError> {
         .collect();
     obs_keys.sort();
     for key in &obs_keys {
-        if let Some(FeatureValue::FloatList(vals)) = features.get(*key) {
+        if let Some(FeatureValue::Float(vals)) = features.get(*key) {
             state.extend(vals);
         }
     }
@@ -313,7 +313,7 @@ fn parse_tf_example(data: &[u8]) -> Result<RldsStep, RldsError> {
     let mut img_keys: Vec<&String> = features.keys().filter(|k| k.contains("image")).collect();
     img_keys.sort();
     for key in &img_keys {
-        if let Some(FeatureValue::BytesList(byte_entries)) = features.get(*key) {
+        if let Some(FeatureValue::Bytes(byte_entries)) = features.get(*key) {
             if let Some(img_bytes) = byte_entries.first() {
                 // Try to decode as image to get dimensions
                 if let Ok((rgb, w, h)) = decode_image_bytes(img_bytes) {
@@ -342,9 +342,9 @@ fn parse_tf_example(data: &[u8]) -> Result<RldsStep, RldsError> {
 /// Decoded feature values.
 #[derive(Debug)]
 enum FeatureValue {
-    FloatList(Vec<f32>),
-    Int64List(Vec<i64>),
-    BytesList(Vec<Vec<u8>>),
+    Float(Vec<f32>),
+    Int64(Vec<i64>),
+    Bytes(Vec<Vec<u8>>),
 }
 
 /// Parse protobuf Features from a tf.train.Example.
@@ -439,7 +439,7 @@ fn parse_map_entry(data: &[u8]) -> Result<(String, FeatureValue), RldsError> {
 
 fn parse_feature(data: &[u8]) -> Result<FeatureValue, RldsError> {
     if data.is_empty() {
-        return Ok(FeatureValue::FloatList(vec![]));
+        return Ok(FeatureValue::Float(vec![]));
     }
 
     let mut pos = 0;
@@ -477,7 +477,7 @@ fn parse_feature(data: &[u8]) -> Result<FeatureValue, RldsError> {
                     ipos = skip_field(inner, ipos, wt as u8)?;
                 }
             }
-            Ok(FeatureValue::BytesList(entries))
+            Ok(FeatureValue::Bytes(entries))
         }
         2 => {
             // FloatList { value: repeated float }
@@ -506,7 +506,7 @@ fn parse_feature(data: &[u8]) -> Result<FeatureValue, RldsError> {
                     ]));
                 }
             }
-            Ok(FeatureValue::FloatList(vals))
+            Ok(FeatureValue::Float(vals))
         }
         3 => {
             // Int64List { value: repeated int64 }
@@ -531,7 +531,7 @@ fn parse_feature(data: &[u8]) -> Result<FeatureValue, RldsError> {
                     vals.push(val);
                 }
             }
-            Ok(FeatureValue::Int64List(vals))
+            Ok(FeatureValue::Int64(vals))
         }
         _ => Err(RldsError::Format(format!(
             "unknown Feature field {}",
@@ -592,14 +592,14 @@ fn skip_field(data: &[u8], pos: usize, wire_type: u8) -> Result<usize, RldsError
 
 fn get_bool_feature(features: &BTreeMap<String, FeatureValue>, key: &str) -> Option<bool> {
     match features.get(key) {
-        Some(FeatureValue::Int64List(vals)) => vals.first().map(|&v| v != 0),
+        Some(FeatureValue::Int64(vals)) => vals.first().map(|&v| v != 0),
         _ => None,
     }
 }
 
 fn get_float_feature(features: &BTreeMap<String, FeatureValue>, key: &str) -> Option<f32> {
     match features.get(key) {
-        Some(FeatureValue::FloatList(vals)) => vals.first().copied(),
+        Some(FeatureValue::Float(vals)) => vals.first().copied(),
         _ => None,
     }
 }
@@ -609,14 +609,14 @@ fn get_float_list_feature(
     key: &str,
 ) -> Option<Vec<f32>> {
     match features.get(key) {
-        Some(FeatureValue::FloatList(vals)) => Some(vals.clone()),
+        Some(FeatureValue::Float(vals)) => Some(vals.clone()),
         _ => None,
     }
 }
 
 fn get_bytes_feature(features: &BTreeMap<String, FeatureValue>, key: &str) -> Option<Vec<u8>> {
     match features.get(key) {
-        Some(FeatureValue::BytesList(entries)) => entries.first().cloned(),
+        Some(FeatureValue::Bytes(entries)) => entries.first().cloned(),
         _ => None,
     }
 }
