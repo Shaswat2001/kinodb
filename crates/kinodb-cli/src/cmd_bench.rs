@@ -49,8 +49,8 @@ pub fn run(
         total_frames as f64 / write_dur.as_secs_f64()
     );
     println!("  File size:    {}", format_bytes(file_size));
-    if total_frames > 0 {
-        println!("  Per frame:    {} bytes", file_size / total_frames);
+    if let Some(bytes_per_frame) = file_size.checked_div(total_frames) {
+        println!("  Per frame:    {} bytes", bytes_per_frame);
     }
     println!();
 
@@ -177,7 +177,7 @@ fn make_bench_episode(idx: u32, num_frames: u32, with_images: bool) -> Episode {
 
     let embodiment = embodiments[idx as usize % embodiments.len()];
     let task = tasks[idx as usize % tasks.len()];
-    let success = idx % 3 != 0;
+    let success = !idx.is_multiple_of(3);
 
     let meta = EpisodeMeta {
         id: EpisodeId(idx as u64),

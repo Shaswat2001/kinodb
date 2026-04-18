@@ -213,16 +213,16 @@ fn main() {
             fps,
             max_episodes,
             compress,
-        } => cmd_ingest::run(
-            &src,
-            &output,
-            &format,
-            &embodiment,
-            task.as_deref(),
+        } => cmd_ingest::run(cmd_ingest::IngestOptions {
+            src: &src,
+            output: &output,
+            format: &format,
+            embodiment: &embodiment,
+            task: task.as_deref(),
             fps,
             max_episodes,
             compress,
-        ),
+        }),
         Commands::Export {
             kdb_path,
             output,

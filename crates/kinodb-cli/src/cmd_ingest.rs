@@ -2,20 +2,44 @@ use kinodb_ingest::hdf5::{self, Hdf5IngestConfig};
 use kinodb_ingest::lerobot::{self, LeRobotIngestConfig};
 use kinodb_ingest::rlds::{self, RldsIngestConfig};
 
-pub fn run(
-    src: &str,
-    output: &str,
-    format: &str,
-    embodiment: &str,
-    task: Option<&str>,
-    fps: f32,
-    max_episodes: Option<usize>,
-    compress: Option<u8>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    match format {
-        "hdf5" => run_hdf5(src, output, embodiment, task, fps, max_episodes, compress),
-        "lerobot" => run_lerobot(src, output, embodiment, task, max_episodes, compress),
-        "rlds" | "tfrecord" => run_rlds(src, output, embodiment, task, fps, max_episodes),
+pub struct IngestOptions<'a> {
+    pub src: &'a str,
+    pub output: &'a str,
+    pub format: &'a str,
+    pub embodiment: &'a str,
+    pub task: Option<&'a str>,
+    pub fps: f32,
+    pub max_episodes: Option<usize>,
+    pub compress: Option<u8>,
+}
+
+pub fn run(options: IngestOptions<'_>) -> Result<(), Box<dyn std::error::Error>> {
+    match options.format {
+        "hdf5" => run_hdf5(
+            options.src,
+            options.output,
+            options.embodiment,
+            options.task,
+            options.fps,
+            options.max_episodes,
+            options.compress,
+        ),
+        "lerobot" => run_lerobot(
+            options.src,
+            options.output,
+            options.embodiment,
+            options.task,
+            options.max_episodes,
+            options.compress,
+        ),
+        "rlds" | "tfrecord" => run_rlds(
+            options.src,
+            options.output,
+            options.embodiment,
+            options.task,
+            options.fps,
+            options.max_episodes,
+        ),
         other => {
             eprintln!(
                 "Unsupported format: '{}'. Supported: hdf5, lerobot, rlds",

@@ -33,8 +33,8 @@ pub fn run(
     if !matches.is_empty() {
         println!();
         println!(
-            "  {:<6} {:<12} {:<8} {:<8} {:<8} {}",
-            "ID", "EMBODIMENT", "FRAMES", "ACT", "SUCCESS", "TASK"
+            "  {:<6} {:<12} {:<8} {:<8} {:<8} TASK",
+            "ID", "EMBODIMENT", "FRAMES", "ACT", "SUCCESS"
         );
         println!("  {}", "-".repeat(70));
 

@@ -65,7 +65,7 @@ pub fn run(
         println!();
         println!("  Empirical distribution:");
         let mut sorted: Vec<_> = counts.into_iter().collect();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
         for (embodiment, count) in &sorted {
             let pct = (*count as f64 / n as f64) * 100.0;
             println!("    {}: {} ({:.1}%)", embodiment, count, pct);

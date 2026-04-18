@@ -37,7 +37,7 @@ pub fn run(
     for ep_idx in 0..num_episodes {
         let embodiment = embodiments[ep_idx as usize % embodiments.len()];
         let task = tasks[ep_idx as usize % tasks.len()];
-        let success = ep_idx % 3 != 0; // ~66% success rate
+        let success = !ep_idx.is_multiple_of(3); // ~66% success rate
 
         let meta = EpisodeMeta {
             id: EpisodeId(0), // writer assigns its own

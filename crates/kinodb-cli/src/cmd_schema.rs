@@ -215,7 +215,7 @@ fn format_bytes(bytes: u64) -> String {
 fn set_summary(s: &BTreeSet<String>) -> String {
     let items: Vec<&str> = s.iter().map(|s| s.as_str()).collect();
     if items.len() <= 4 {
-        format!("{}", items.join(", "))
+        items.join(", ")
     } else {
         format!("{}, ... ({} total)", items[..3].join(", "), items.len())
     }
