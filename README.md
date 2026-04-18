@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="kinodb-docs/public/logo-dark.svg" width="170" alt="kinodb logo">
+  <img src="assets/kinodb-readme-hero.svg" width="640" alt="kinodb robot trajectory database">
 </p>
-
-<h1 align="center">kinodb</h1>
 
 <p align="center">
   <strong>Robot trajectory database for fast, queryable, cross-format training data.</strong>
